@@ -1,0 +1,201 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BrandGenius AI - Agence de Branding Professionnelle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@300;400;500;600;700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Montserrat:wght@100;200;300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,700;0,800;1,700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                        serif: ['"Libre Baskerville"', 'serif'],
+                        display: ['"Space Grotesk"', 'sans-serif'],
+                        montserrat: ['Montserrat', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#4f46e5',
+                        'primary-dark': '#3730a3',
+                        accent: '#3b82f6',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-dark: #3730a3;
+            --accent: #3b82f6;
+            --bg-light: #f8faff;
+            --text-main: #0f172a;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #080b14;
+            color: #ffffff;
+            overflow-x: hidden;
+        }
+
+        /* Dynamic Background with Image & Mesh */
+        .bg-master {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background-color: #080b14;
+            overflow: hidden;
+        }
+
+        .bg-image-layer {
+            position: absolute;
+            inset: 0;
+            background-image: url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=2560');
+            background-size: cover;
+            background-position: center;
+            opacity: 0.12;
+            filter: grayscale(100%) brightness(0.5);
+            animation: slowZoom 60s linear infinite alternate;
+        }
+
+        .bg-overlay-layer {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(at 0% 0%, rgba(79, 70, 229, 0.2) 0px, transparent 50%),
+                        radial-gradient(at 100% 0%, rgba(59, 130, 246, 0.2) 0px, transparent 50%),
+                        linear-gradient(to bottom, transparent, #080b14 90%);
+        }
+
+        @keyframes slowZoom {
+            0% { transform: scale(1.1); }
+            100% { transform: scale(1.2); }
+        }
+
+        .font-serif {
+            font-family: 'Libre Baskerville', serif;
+        }
+        
+        .font-display {
+            font-family: 'Space Grotesk', sans-serif;
+        }
+
+        /* Glassmorphism high visibility */
+        .glass {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 1);
+        }
+
+        .glass-dark {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(30px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .text-vertical {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+        }
+
+        @media print {
+            @page {
+                size: A4 portrait;
+                margin: 0;
+            }
+            body { 
+                background-color: white !important; 
+                color: #0f172a !important; 
+                background-image: none !important; 
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                font-family: 'Plus Jakarta Sans', sans-serif !important;
+            }
+            * {
+                animation: none !important;
+                transition: none !important;
+            }
+            .bg-master, .print\:hidden, .no-print, #chatbot-container, header, footer, form { 
+                display: none !important; 
+            }
+            main { 
+                padding: 0 !important; 
+                margin: 0 !important; 
+                max-width: 100% !important; 
+                width: 100% !important; 
+            }
+            #branding-export-container { 
+                border-radius: 0 !important; 
+                box-shadow: none !important; 
+                border: none !important; 
+                width: 100% !important; 
+                max-width: 100% !important;
+                margin: 0 !important;
+                background: white !important;
+                overflow: visible !important;
+            }
+            section {
+                height: 297mm !important; /* A4 Height */
+                width: 210mm !important;  /* A4 Width */
+                page-break-after: always !important;
+                page-break-inside: avoid !important;
+                display: flex !important;
+                flex-direction: column !important;
+                justify-content: space-between !important;
+                padding: 20mm !important;
+                box-sizing: border-box !important;
+                position: relative !important;
+                overflow: visible !important;
+                background: white !important;
+                color: #0f172a !important;
+            }
+            /* Ensure dark sections still look good in print if needed, or force them to light */
+            #section-cover {
+                background: #050810 !important;
+                color: white !important;
+            }
+            .page-break { display: none !important; }
+            img { 
+                max-width: 100% !important; 
+                height: auto !important;
+                display: block !important;
+                margin: 0 auto !important;
+            }
+            .text-glow-strong { text-shadow: none !important; }
+            h1, h2, h3, h4 { page-break-after: avoid !important; }
+            p, div { orphans: 3; widows: 3; }
+        }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #080b14; }
+        ::-webkit-scrollbar-thumb { background: #3730a3; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4f46e5; }
+        
+        input, textarea, select {
+            color: #0f172a !important;
+            background-color: #ffffff !important;
+        }
+
+        .text-glow-strong {
+            text-shadow: 0 0 40px rgba(255, 255, 255, 0.3);
+        }
+    </style>
+    <link rel="stylesheet" href="/index.css">
+</head>
+<body>
+    <div class="bg-master">
+        <div class="bg-image-layer"></div>
+        <div class="bg-overlay-layer"></div>
+    </div>
+    <div id="root"></div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>

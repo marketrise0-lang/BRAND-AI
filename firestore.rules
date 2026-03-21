@@ -1,0 +1,146 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (exists(/databases/$(database)/documents/admins/$(request.auth.uid)) || 
+         (request.auth.token.email == 'ngwanoloic256@gmail.com' && request.auth.token.email_verified == true));
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'email', 'role', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             data.email is string &&
+             data.role is string &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidProject(data) {
+      return hasRequiredFields(['id', 'type', 'title', 'createdAt', 'updatedAt', 'status']) &&
+             data.id is string &&
+             data.type in ['logo', 'flyer', 'mockup', 'brandkit'] &&
+             data.title is string &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp &&
+             data.status in ['draft', 'completed'];
+    }
+
+    function isValidProgress(data) {
+      return hasRequiredFields(['projectId', 'totalSteps', 'completedSteps', 'progressPercent', 'updatedAt']) &&
+             data.projectId is string &&
+             data.totalSteps is int &&
+             data.completedSteps is int &&
+             data.progressPercent is number &&
+             data.updatedAt is timestamp;
+    }
+
+    function isValidActivity(data) {
+      return hasRequiredFields(['id', 'type', 'projectId', 'createdAt']) &&
+             data.id is string &&
+             data.type in ['logo_generation', 'export', 'edit', 'download'] &&
+             data.projectId is string &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidDownload(data) {
+      return hasRequiredFields(['id', 'projectId', 'fileType', 'createdAt']) &&
+             data.id is string &&
+             data.projectId is string &&
+             data.fileType in ['PNG', 'SVG', 'PDF'] &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isAuthenticated() && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+
+      match /projects/{projectId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidProject(request.resource.data);
+        allow update: if isOwner(userId) && isValidProject(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /progress/{projectId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidProgress(request.resource.data);
+        allow update: if isOwner(userId) && isValidProgress(request.resource.data);
+      }
+
+      match /activity/{activityId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidActivity(request.resource.data);
+      }
+
+      match /downloads/{downloadId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidDownload(request.resource.data);
+      }
+    }
+
+    // Admin rules
+    match /admins/{adminId} {
+      allow read: if isOwner(adminId) || isAdmin();
+      allow create: if isAuthenticated() && request.auth.token.email == 'ngwanoloic256@gmail.com'; // Bootstrap admin
+      allow update: if isAdmin();
+    }
+
+    match /templates/{templateId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /orders/{orderId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    match /subscriptions/{subscriptionId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    match /posts/{postId} {
+      allow read: if true; // Public blog
+      allow write: if isAdmin();
+    }
+
+    // Global admin access to all user data for management
+    match /users/{userId} {
+      allow read: if isAdmin();
+      match /{allSubcollections=**} {
+        allow read: if isAdmin();
+      }
+    }
+  }
+}

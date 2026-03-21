@@ -1,0 +1,187 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Design project",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["logo", "flyer", "mockup", "brandkit"] },
+        "title": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["draft", "completed"] },
+        "previewImage": { "type": "string" }
+      },
+      "required": ["id", "type", "title", "createdAt", "updatedAt", "status"]
+    },
+    "DesignProgress": {
+      "title": "DesignProgress",
+      "description": "Progress tracking for a project",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "totalSteps": { "type": "integer" },
+        "completedSteps": { "type": "integer" },
+        "progressPercent": { "type": "number" },
+        "lastAction": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["projectId", "totalSteps", "completedSteps", "progressPercent", "updatedAt"]
+    },
+    "Activity": {
+      "title": "Activity",
+      "description": "User activity log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["logo_generation", "export", "edit", "download"] },
+        "projectId": { "type": "string" },
+        "duration": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "type", "projectId", "createdAt"]
+    },
+    "Download": {
+      "title": "Download",
+      "description": "Asset download record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "fileType": { "type": "string", "enum": ["PNG", "SVG", "PDF"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "fileUrl": { "type": "string" }
+      },
+      "required": ["id", "projectId", "fileType", "createdAt"]
+    },
+    "AdminProfile": {
+      "title": "AdminProfile",
+      "description": "Admin profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastLoginAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "createdAt"]
+    },
+    "Template": {
+      "title": "Template",
+      "description": "Design template",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["logo", "flyer", "mockup"] },
+        "category": { "type": "string" },
+        "premium": { "type": "boolean" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "imageUrl": { "type": "string" }
+      },
+      "required": ["id", "type", "category", "premium", "createdBy", "createdAt"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Payment order",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "paymentStatus": { "type": "string", "enum": ["paid", "pending", "failed"] },
+        "paymentMethod": { "type": "string", "enum": ["card", "mobile money"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "amount", "currency", "paymentStatus", "paymentMethod", "createdAt"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "User subscription",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "plan": { "type": "string", "enum": ["free", "pro"] },
+        "status": { "type": "string", "enum": ["active", "cancelled"] },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "plan", "status", "startedAt", "expiresAt"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Blog post",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "published"] },
+        "authorId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "publishedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "content", "status", "authorId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "UserProfile",
+      "description": "User profile document"
+    },
+    "/users/{uid}/projects/{projectId}": {
+      "schema": "Project",
+      "description": "User's design projects"
+    },
+    "/users/{uid}/progress/{projectId}": {
+      "schema": "DesignProgress",
+      "description": "Progress tracking for a project"
+    },
+    "/users/{uid}/activity/{activityId}": {
+      "schema": "Activity",
+      "description": "User's activity log"
+    },
+    "/users/{uid}/downloads/{downloadId}": {
+      "schema": "Download",
+      "description": "User's asset downloads"
+    },
+    "/admins/{adminId}": {
+      "schema": "AdminProfile",
+      "description": "Admin profile document"
+    },
+    "/templates/{templateId}": {
+      "schema": "Template",
+      "description": "Design templates"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Payment orders"
+    },
+    "/subscriptions/{subscriptionId}": {
+      "schema": "Subscription",
+      "description": "User subscriptions"
+    },
+    "/posts/{postId}": {
+      "schema": "Post",
+      "description": "Blog posts"
+    }
+  }
+}

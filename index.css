@@ -1,0 +1,42 @@
+
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Libre Baskerville", serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-montserrat: "Montserrat", sans-serif;
+}
+
+@layer utilities {
+  .text-vertical {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+  }
+  
+  .bg-grid-slate-100 {
+    background-image: radial-gradient(circle, #e2e8f0 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  .glass-card {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+}
+
+/* Specific styles for PDF export to ensure high quality */
+.pdf-page {
+  width: 210mm;
+  height: 297mm;
+  padding: 20mm;
+  background: white;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.page-number::after {
+  content: counter(page);
+}

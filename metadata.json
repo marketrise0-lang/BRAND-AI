@@ -1,0 +1,7 @@
+{
+  "name": "BrandGenius AI - Master Branding Suite",
+  "description": "Plateforme d'élite pour la création d'identités visuelles, vidéos cinématiques et stratégies de marque via Gemini Pro & Veo.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
