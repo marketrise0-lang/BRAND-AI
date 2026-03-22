@@ -58,8 +58,19 @@ const Login: React.FC<LoginProps> = ({ onToggle }) => {
       
       navigate('/dashboard');
     } catch (err: any) {
-      console.error("Google login error:", err);
-      setError('Something went wrong. Please try again.');
+      console.error("Google login error details:", {
+        code: err.code,
+        message: err.message,
+        stack: err.stack,
+        customData: err.customData
+      });
+      if (err.code === 'auth/network-request-failed') {
+        setError('Erreur réseau : Impossible de contacter les services d\'authentification. Vérifiez votre connexion ou vos extensions de navigateur (bloqueurs de pub).');
+      } else if (err.code === 'auth/popup-blocked') {
+        setError('Le popup de connexion a été bloqué par votre navigateur. Veuillez autoriser les popups pour ce site.');
+      } else {
+        setError(`Erreur de connexion : ${err.message || 'Une erreur est survenue.'}`);
+      }
     } finally {
       setIsLoading(false);
     }
