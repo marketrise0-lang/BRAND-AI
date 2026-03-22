@@ -28,6 +28,12 @@
             }
         }
     </script>
+    <script>
+        // Polyfill for global object to avoid "global is not defined" errors
+        if (typeof global === 'undefined') {
+            window.global = window;
+        }
+    </script>
     <style>
         :root {
             --primary: #4f46e5;

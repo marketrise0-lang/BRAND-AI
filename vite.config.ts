@@ -12,7 +12,6 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react(), tailwindcss()],
       define: {
-        'global': 'globalThis',
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.API_KEY || ''),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.API_KEY || '')
       },
@@ -22,6 +21,7 @@ export default defineConfig(({ mode }) => {
           'node-fetch': path.resolve(__dirname, './fetch-polyfill.js'),
           'cross-fetch': path.resolve(__dirname, './fetch-polyfill.js'),
           'isomorphic-fetch': path.resolve(__dirname, './fetch-polyfill.js'),
+          'formdata-polyfill': path.resolve(__dirname, './empty.js'),
           'https': path.resolve(__dirname, './empty.js'),
           'http': path.resolve(__dirname, './empty.js'),
           'zlib': path.resolve(__dirname, './empty.js'),
