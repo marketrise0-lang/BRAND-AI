@@ -5,7 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BrandGenius AI - Agence de Branding Professionnelle</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@300;400;500;600;700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Montserrat:wght@100;200;300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,700;0,800;1,700&display=swap" rel="stylesheet">
@@ -29,10 +28,63 @@
         }
     </script>
     <script>
-        // Polyfill for global object to avoid "global is not defined" errors
-        if (typeof global === 'undefined') {
-            window.global = window;
-        }
+        (function() {
+            const originalFetch = window.fetch;
+            if (!originalFetch) return;
+
+            // Define a setter that ignores assignments
+            try {
+                Object.defineProperty(window, 'fetch', {
+                    get: function() { return originalFetch; },
+                    set: function(v) { 
+                        console.warn('Ignored attempt to overwrite fetch on window');
+                        return true; 
+                    },
+                    configurable: true,
+                    enumerable: true
+                });
+            } catch (e) {
+                console.warn('Could not redefine window.fetch with setter:', e.message);
+            }
+
+            const handler = {
+                get(target, prop) {
+                    if (prop === 'fetch') return originalFetch;
+                    const value = Reflect.get(target, prop);
+                    return typeof value === 'function' ? value.bind(target) : value;
+                },
+                set(target, prop, value) {
+                    if (prop === 'fetch') {
+                        console.warn('Ignored attempt to overwrite fetch on global/proxy');
+                        return true;
+                    }
+                    return Reflect.set(target, prop, value);
+                }
+            };
+
+            const proxy = new Proxy(window, handler);
+
+            // Define global polyfills
+            const defineGlobal = (name) => {
+                try {
+                    Object.defineProperty(window, name, {
+                        value: proxy,
+                        configurable: true,
+                        enumerable: true,
+                        writable: true
+                    });
+                } catch (e) {
+                    try {
+                        window[name] = proxy;
+                    } catch (err) {}
+                }
+            };
+
+            if (typeof global === 'undefined') defineGlobal('global');
+            // Note: globalThis and self are often non-configurable, but we can try
+            // defineGlobal('globalThis');
+            // defineGlobal('self');
+        })();
     </script>
     <style>
         :root {
