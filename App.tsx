@@ -10,6 +10,7 @@ import Login from './components/Login';
 import Signup from './components/Signup';
 import VerifyEmail from './components/VerifyEmail';
 import Home from './src/components/Home';
+import Checkout from './src/components/Checkout';
 import AdminDashboard from './src/components/AdminDashboard';
 import ProtectedRoute from './ProtectedRoute';
 import { AuthProvider, useAuth } from './AuthContext';
@@ -25,7 +26,8 @@ import {
   logActivity,
   recordDownload,
   updateProject,
-  createUserProfile
+  createUserProfile,
+  subscribeToUserSubscription
 } from './src/services/firestoreService';
 import { createAdminProfile } from './src/services/adminService';
 import MyProjects from './components/dashboard/MyProjects';
@@ -34,7 +36,7 @@ import MyDownloads from './components/dashboard/MyDownloads';
 import ActivityHistory from './components/dashboard/ActivityHistory';
 import CreateProjectModal from './components/dashboard/CreateProjectModal';
 import ExportDesignModal from './components/dashboard/ExportDesignModal';
-import { BrandProfile, BrandingResult as BrandingType, Project, DesignProgress as ProgressType, Activity, Download } from './types';
+import { BrandProfile, BrandingResult as BrandingType, Project, DesignProgress as ProgressType, Activity, Download, Subscription } from './types';
 import { generateBranding, generateBrandingFromLogo, generateImage, fastAnalyzeContent, generateVideoVeo } from './services/geminiService';
 
 interface ErrorBoundaryProps {
@@ -130,6 +132,7 @@ const Dashboard: React.FC = () => {
   const [progress, setProgress] = useState<ProgressType[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [downloads, setDownloads] = useState<Download[]>([]);
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [isDashboardLoading, setIsDashboardLoading] = useState(true);
   
   // Modal State
@@ -157,12 +160,14 @@ const Dashboard: React.FC = () => {
       const unsubProgress = subscribeToProgress(user.uid, setProgress);
       const unsubActivity = subscribeToActivity(user.uid, setActivities);
       const unsubDownloads = subscribeToDownloads(user.uid, setDownloads);
+      const unsubSubscription = subscribeToUserSubscription(user.uid, setSubscription);
 
       return () => {
         unsubProjects();
         unsubProgress();
         unsubActivity();
         unsubDownloads();
+        unsubSubscription();
       };
     }
   }, [user]);
@@ -225,6 +230,14 @@ const Dashboard: React.FC = () => {
   };
 
   const checkUsageLimit = () => {
+    const isFree = !subscription || subscription.plan === 'free';
+    if (isFree && projects.length >= 3) {
+      setError({
+        type: 'quota',
+        message: "Vous avez atteint la limite de 3 générations gratuites pour le plan Starter. Veuillez passer au plan Pro pour continuer."
+      });
+      return false;
+    }
     return true;
   };
 
@@ -430,29 +443,34 @@ const Dashboard: React.FC = () => {
     await delay(4000);
     if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
 
-    setLoadingStep(language === 'fr' ? "Production de la vidéo promotionnelle d'élite..." : "Producing elite promotional video...");
-    try {
-      const videoPrompt = language === 'fr'
-        ? `Vidéo promotionnelle ultra-dynamique et cinématographique pour le logo de ${companyName}. 
-           Fond visuellement riche avec des textures abstraites élégantes, des particules de lumière et des dégradés profonds. 
-           Utilise les couleurs : ${primaryColor}, ${secondaryColor}. 
-           Style : ${brandingData.styleGuide.visualStyle}. 
-           Mouvement de caméra fluide et percutant, révélant le logo avec prestige.`
-        : `Ultra-dynamic and cinematic promotional video for the ${companyName} logo. 
-           Visually rich background with elegant abstract textures, light particles, and deep gradients. 
-           Uses colors: ${primaryColor}, ${secondaryColor}. 
-           Style: ${brandingData.styleGuide.visualStyle}. 
-           Impactful camera movement, revealing the logo with prestige.`;
-           
-      brandingData.styleGuide.ecosystem.promoVideoUrl = await generateVideoVeo(logoUrl, videoPrompt, true, signal);
-    } catch (e: any) { 
-      const message = e?.message || String(e);
-      if (e.name === 'AbortError' || message.toLowerCase().includes("aborted") || message.toLowerCase().includes("the user aborted a request")) throw e;
-      console.warn("Veo/Video Generation Warning:", e); 
-    }
+    // Skip video generation for free users (Starter plan)
+    const isFree = !subscription || subscription.plan === 'free';
+    
+    if (!isFree) {
+      setLoadingStep(language === 'fr' ? "Production de la vidéo promotionnelle d'élite..." : "Producing elite promotional video...");
+      try {
+        const videoPrompt = language === 'fr'
+          ? `Vidéo promotionnelle ultra-dynamique et cinématographique pour le logo de ${companyName}. 
+             Fond visuellement riche avec des textures abstraites élégantes, des particules de lumière et des dégradés profonds. 
+             Utilise les couleurs : ${primaryColor}, ${secondaryColor}. 
+             Style : ${brandingData.styleGuide.visualStyle}. 
+             Mouvement de caméra fluide et percutant, révélant le logo avec prestige.`
+          : `Ultra-dynamic and cinematic promotional video for the ${companyName} logo. 
+             Visually rich background with elegant abstract textures, light particles, and deep gradients. 
+             Uses colors: ${primaryColor}, ${secondaryColor}. 
+             Style: ${brandingData.styleGuide.visualStyle}. 
+             Impactful camera movement, revealing the logo with prestige.`;
+             
+        brandingData.styleGuide.ecosystem.promoVideoUrl = await generateVideoVeo(logoUrl, videoPrompt, true, signal);
+      } catch (e: any) { 
+        const message = e?.message || String(e);
+        if (e.name === 'AbortError' || message.toLowerCase().includes("aborted") || message.toLowerCase().includes("the user aborted a request")) throw e;
+        console.warn("Veo/Video Generation Warning:", e); 
+      }
 
-    await delay(4000);
-    if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
+      await delay(4000);
+      if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
+    }
 
     setLoadingStep("Conception des supports Print de prestige...");
     const businessCardPrompt = `PRESTIGE MOCKUP: Luxury business card design for ${companyName}. Front and back view. Minimalist, using ${primaryColor} and ${secondaryColor}. Elegant typography.`;
@@ -754,7 +772,19 @@ const Dashboard: React.FC = () => {
               </div>
             )}
             
-            {!result && !isLoading && <AdvancedLab />}
+            {!result && !isLoading && (!subscription || subscription.plan !== 'free') && <AdvancedLab />}
+            {!result && !isLoading && (subscription?.plan === 'free' || !subscription) && (
+              <div className="mt-20 p-12 glass-dark rounded-[3rem] border border-white/10 text-center">
+                <h3 className="text-2xl font-serif italic text-white mb-4">Advanced Lab (Pro Only)</h3>
+                <p className="text-white/40 mb-8">Passez au plan Pro pour accéder aux outils de génération d'élite (Gemini 3 Pro & Veo).</p>
+                <button 
+                  onClick={() => navigate('/')} 
+                  className="px-8 py-3 bg-indigo-600 text-white font-black uppercase tracking-widest text-[10px] rounded-xl hover:bg-indigo-700 transition-all"
+                >
+                  Voir les Plans
+                </button>
+              </div>
+            )}
           </>
         )}
 
@@ -865,10 +895,11 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/auth" element={<Auth />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route path="/checkout" element={<Checkout />} />
           <Route 
             path="/admin" 
             element={
-              <ProtectedRoute>
+              <ProtectedRoute adminOnly>
                 <ErrorBoundary>
                   <AdminDashboard />
                 </ErrorBoundary>

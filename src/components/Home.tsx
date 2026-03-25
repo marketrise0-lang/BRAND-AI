@@ -64,6 +64,37 @@ const Home: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('annual');
+
+  const pricingPlans = [
+    { 
+      name: "Starter", 
+      price: "0€", 
+      desc: "Pour tester la puissance de l'IA", 
+      features: ["3 générations après création", "Basse résolution", "Support standard", "Accès basique"], 
+      cta: "Essayer gratuitement", 
+      popular: false 
+    },
+    { 
+      name: "Pro", 
+      price: billingCycle === 'monthly' ? "29€" : "10€", 
+      annualPrice: "120€",
+      desc: "Pour les entrepreneurs sérieux", 
+      features: ["Projets illimités", "Haute résolution (4K)", "Support prioritaire", "Tous les formats d'export", "Brand Book complet"], 
+      cta: "Devenir Pro", 
+      popular: true 
+    },
+    { 
+      name: "Agency", 
+      price: billingCycle === 'monthly' ? "49€" : "40€", 
+      annualPrice: "480€",
+      desc: "Pour les équipes et agences", 
+      features: ["Tout du plan Pro", "Accès multi-utilisateurs", "Marque blanche", "API Access", "Account Manager dédié"], 
+      cta: "Contacter l'équipe", 
+      popular: false 
+    }
+  ];
+
   return (
     <div className="min-h-screen bg-[#050505] text-white selection:bg-indigo-500 selection:text-white overflow-x-hidden">
       {/* Navigation */}
@@ -274,21 +305,42 @@ const Home: React.FC = () => {
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-20">
             <h2 className="text-4xl md:text-6xl font-black tracking-tighter mb-6">TARIFS TRANSPARENTS</h2>
-            <p className="text-white/60 text-lg max-w-2xl mx-auto">
+            <p className="text-white/60 text-lg max-w-2xl mx-auto mb-10">
               Choisissez le plan qui correspond à vos ambitions. Pas de frais cachés.
             </p>
+
+            {/* Billing Toggle */}
+            <div className="flex items-center justify-center space-x-4">
+              <span className={`text-sm font-bold ${billingCycle === 'monthly' ? 'text-white' : 'text-white/40'}`}>Mensuel</span>
+              <button 
+                onClick={() => setBillingCycle(billingCycle === 'monthly' ? 'annual' : 'monthly')}
+                className="w-14 h-7 bg-white/10 rounded-full relative p-1 transition-all"
+              >
+                <div className={`w-5 h-5 bg-indigo-500 rounded-full transition-all ${billingCycle === 'annual' ? 'translate-x-7' : 'translate-x-0'}`}></div>
+              </button>
+              <div className="flex items-center space-x-2">
+                <span className={`text-sm font-bold ${billingCycle === 'annual' ? 'text-white' : 'text-white/40'}`}>Annuel</span>
+                <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-400 text-[10px] font-black rounded-full border border-indigo-500/20">
+                  -60% ÉCONOMIE
+                </span>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {[
-              { name: "Starter", price: "0€", desc: "Pour tester la puissance de l'IA", features: ["3 Projets / mois", "Basse résolution", "Support standard", "Accès basique"], cta: "Essayer gratuitement", popular: false },
-              { name: "Pro", price: "29€", desc: "Pour les entrepreneurs sérieux", features: ["Projets illimités", "Haute résolution (4K)", "Support prioritaire", "Tous les formats d'export", "Brand Book complet"], cta: "Devenir Pro", popular: true },
-              { name: "Agency", price: "99€", desc: "Pour les équipes et agences", features: ["Tout du plan Pro", "Accès multi-utilisateurs", "Marque blanche", "API Access", "Account Manager dédié"], cta: "Contacter l'équipe", popular: false }
-            ].map((plan, idx) => (
+            {pricingPlans.map((plan, idx) => (
               <div key={idx} className={`p-12 rounded-[2.5rem] border transition-all hover:-translate-y-2 flex flex-col ${plan.popular ? 'bg-indigo-600 border-indigo-400 shadow-2xl shadow-indigo-500/20' : 'glass-dark border-white/5'}`}>
                 {plan.popular && <span className="text-[10px] font-black uppercase tracking-widest mb-4 inline-block">Le plus populaire</span>}
                 <h3 className="text-3xl font-black tracking-tight mb-2">{plan.name}</h3>
-                <div className="text-5xl font-black tracking-tighter mb-4">{plan.price}<span className="text-sm font-medium text-white/40">/mois</span></div>
+                <div className="text-5xl font-black tracking-tighter mb-4">
+                  {plan.price}
+                  <span className="text-sm font-medium text-white/40">/mois</span>
+                </div>
+                {billingCycle === 'annual' && plan.annualPrice && (
+                  <div className="text-xs font-bold text-indigo-300 mb-4 uppercase tracking-widest">
+                    Facturé {plan.annualPrice} / an
+                  </div>
+                )}
                 <p className="text-white/60 mb-8 text-sm">{plan.desc}</p>
                 <div className="space-y-4 mb-12 flex-grow">
                   {plan.features.map((f, i) => (
@@ -299,7 +351,7 @@ const Home: React.FC = () => {
                   ))}
                 </div>
                 <button 
-                  onClick={() => navigate('/auth')}
+                  onClick={() => navigate('/checkout', { state: { plan: { ...plan, billingCycle } } })}
                   className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${plan.popular ? 'bg-white text-black hover:bg-white/90' : 'bg-white/10 text-white hover:bg-white/20'}`}
                 >
                   {plan.cta}

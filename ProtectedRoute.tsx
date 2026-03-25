@@ -4,10 +4,11 @@ import { useAuth } from './AuthContext';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
+  adminOnly?: boolean;
 }
 
-const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { user, loading } = useAuth();
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, adminOnly = false }) => {
+  const { user, loading, isAdmin } = useAuth();
 
   if (loading) {
     return (
@@ -23,6 +24,10 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
 
   if (!user.emailVerified) {
     return <Navigate to="/verify-email" state={{ email: user.email }} />;
+  }
+
+  if (adminOnly && !isAdmin) {
+    return <Navigate to="/" />;
   }
 
   return <>{children}</>;

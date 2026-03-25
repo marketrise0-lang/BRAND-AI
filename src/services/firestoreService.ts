@@ -11,23 +11,60 @@ import {
   serverTimestamp,
   addDoc,
   updateDoc,
-  deleteDoc
+  deleteDoc,
+  limit
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
-import { Project, DesignProgress, Activity, Download, UserProfile } from "../../types";
+import { Project, DesignProgress, Activity, Download, UserProfile, Subscription } from "../../types";
 
-// Error handling helper
-const handleFirestoreError = (error: any, operation: string, path: string) => {
-  const errInfo = {
-    error: error.message,
-    operationType: operation,
-    path: path,
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+const handleFirestoreError = (error: unknown, operationType: OperationType, path: string | null) => {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
     authInfo: {
       userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email
-    }
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
   };
-  console.error("Firestore Error:", JSON.stringify(errInfo));
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 };
 
@@ -43,11 +80,14 @@ export const createUserProfile = async (uid: string, email: string, displayName:
         email,
         displayName,
         role: 'user',
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp()
       });
+    } else {
+      await updateDoc(userRef, { lastLoginAt: serverTimestamp() });
     }
   } catch (error) {
-    handleFirestoreError(error, 'create', path);
+    handleFirestoreError(error, OperationType.WRITE, path);
   }
 };
 
@@ -80,7 +120,7 @@ export const createProject = async (uid: string, project: Omit<Project, 'id' | '
 
     return projectRef.id;
   } catch (error) {
-    handleFirestoreError(error, 'create', path);
+    handleFirestoreError(error, OperationType.CREATE, path);
   }
 };
 
@@ -93,7 +133,7 @@ export const updateProject = async (uid: string, projectId: string, updates: Par
       updatedAt: serverTimestamp()
     });
   } catch (error) {
-    handleFirestoreError(error, 'update', path);
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
 };
 
@@ -108,7 +148,7 @@ export const updateProgress = async (uid: string, projectId: string, progress: O
       updatedAt: serverTimestamp()
     });
   } catch (error) {
-    handleFirestoreError(error, 'update', path);
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
 };
 
@@ -123,7 +163,7 @@ export const logActivity = async (uid: string, activity: Omit<Activity, 'id' | '
       createdAt: serverTimestamp()
     });
   } catch (error) {
-    handleFirestoreError(error, 'create', path);
+    handleFirestoreError(error, OperationType.CREATE, path);
   }
 };
 
@@ -144,7 +184,7 @@ export const recordDownload = async (uid: string, download: Omit<Download, 'id' 
       projectId: download.projectId
     });
   } catch (error) {
-    handleFirestoreError(error, 'create', path);
+    handleFirestoreError(error, OperationType.CREATE, path);
   }
 };
 
@@ -155,7 +195,7 @@ export const subscribeToProjects = (uid: string, callback: (projects: Project[])
   return onSnapshot(q, (snapshot) => {
     const projects = snapshot.docs.map(doc => doc.data() as Project);
     callback(projects);
-  }, (error) => handleFirestoreError(error, 'list', path));
+  }, (error) => handleFirestoreError(error, OperationType.LIST, path));
 };
 
 export const subscribeToProgress = (uid: string, callback: (progress: DesignProgress[]) => void) => {
@@ -164,7 +204,7 @@ export const subscribeToProgress = (uid: string, callback: (progress: DesignProg
   return onSnapshot(q, (snapshot) => {
     const progress = snapshot.docs.map(doc => doc.data() as DesignProgress);
     callback(progress);
-  }, (error) => handleFirestoreError(error, 'list', path));
+  }, (error) => handleFirestoreError(error, OperationType.LIST, path));
 };
 
 export const subscribeToActivity = (uid: string, callback: (activities: Activity[]) => void) => {
@@ -173,7 +213,7 @@ export const subscribeToActivity = (uid: string, callback: (activities: Activity
   return onSnapshot(q, (snapshot) => {
     const activities = snapshot.docs.map(doc => doc.data() as Activity);
     callback(activities);
-  }, (error) => handleFirestoreError(error, 'list', path));
+  }, (error) => handleFirestoreError(error, OperationType.LIST, path));
 };
 
 export const subscribeToDownloads = (uid: string, callback: (downloads: Download[]) => void) => {
@@ -182,5 +222,16 @@ export const subscribeToDownloads = (uid: string, callback: (downloads: Download
   return onSnapshot(q, (snapshot) => {
     const downloads = snapshot.docs.map(doc => doc.data() as Download);
     callback(downloads);
-  }, (error) => handleFirestoreError(error, 'list', path));
+  }, (error) => handleFirestoreError(error, OperationType.LIST, path));
+};
+
+export const subscribeToUserSubscription = (uid: string, callback: (subscription: Subscription | null) => void) => {
+  const q = query(collection(db, "subscriptions"), where("userId", "==", uid), limit(1));
+  return onSnapshot(q, (snapshot) => {
+    if (snapshot.empty) {
+      callback(null);
+    } else {
+      callback({ ...snapshot.docs[0].data() as Subscription, id: snapshot.docs[0].id });
+    }
+  }, (error) => handleFirestoreError(error, OperationType.GET, 'subscriptions'));
 };

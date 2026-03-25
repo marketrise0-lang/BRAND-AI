@@ -29,6 +29,57 @@ import {
   AdminMetrics 
 } from "../../types";
 
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
 // Admin Profile
 export const checkIsAdmin = async (user: any): Promise<boolean> => {
   if (!user) return false;
@@ -46,87 +97,107 @@ export const checkIsAdmin = async (user: any): Promise<boolean> => {
 export const createAdminProfile = async (user: any) => {
   if (!user) return;
   const adminRef = doc(db, "admins", user.uid);
-  const adminSnap = await getDoc(adminRef);
+  try {
+    const adminSnap = await getDoc(adminRef);
 
-  if (!adminSnap.exists()) {
-    const adminData: AdminProfile = {
-      uid: user.uid,
-      displayName: user.displayName || "Admin",
-      email: user.email,
-      role: "admin",
-      createdAt: serverTimestamp(),
-      lastLoginAt: serverTimestamp(),
-    };
-    await setDoc(adminRef, adminData);
-  } else {
-    await updateDoc(adminRef, { lastLoginAt: serverTimestamp() });
+    if (!adminSnap.exists()) {
+      const adminData: AdminProfile = {
+        uid: user.uid,
+        displayName: user.displayName || "Admin",
+        email: user.email,
+        role: "admin",
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+      };
+      await setDoc(adminRef, adminData);
+    } else {
+      await updateDoc(adminRef, { lastLoginAt: serverTimestamp() });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `admins/${user.uid}`);
   }
 };
 
 // Metrics
 export const subscribeToAdminMetrics = (callback: (metrics: AdminMetrics) => void) => {
-  // This is a complex one because Firestore doesn't support count() in real-time listeners easily without cloud functions
-  // For this demo, we'll use snapshots of collections and calculate client-side
-  // In production, we'd use a dedicated metrics document updated by cloud functions
-  
-  const unsubUsers = onSnapshot(collection(db, "users"), (usersSnap) => {
-    const totalUsers = usersSnap.size;
-    
-    onSnapshot(collectionGroup(db, "projects"), (projectsSnap) => {
-      const totalDesigns = projectsSnap.size;
-      
-      onSnapshot(query(collection(db, "subscriptions"), where("status", "==", "active")), (subsSnap) => {
-        const activeSubscriptions = subsSnap.size;
-        
-        onSnapshot(query(collection(db, "orders"), where("paymentStatus", "==", "paid")), (ordersSnap) => {
-          let totalRevenue = 0;
-          const orders: Order[] = [];
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          let newOrdersToday = 0;
+  let totalUsers = 0;
+  let totalDesigns = 0;
+  let activeSubscriptions = 0;
+  let totalRevenue = 0;
+  let newOrdersToday = 0;
+  let recentSales: Order[] = [];
+  let popularDesignType = "None";
 
-          ordersSnap.forEach((doc) => {
-            const data = doc.data() as Order;
-            totalRevenue += data.amount;
-            
-            const createdAt = data.createdAt?.toDate?.() || new Date(data.createdAt);
-            if (createdAt >= today) {
-              newOrdersToday++;
-            }
-            orders.push({ ...data, id: doc.id });
-          });
-
-          // Sort and get recent sales
-          const recentSales = orders
-            .sort((a, b) => b.createdAt.seconds - a.createdAt.seconds)
-            .slice(0, 5);
-
-          // Popular design type
-          const typeCounts: Record<string, number> = {};
-          projectsSnap.forEach((doc) => {
-            const type = doc.data().type;
-            typeCounts[type] = (typeCounts[type] || 0) + 1;
-          });
-          const popularDesignType = Object.entries(typeCounts)
-            .sort(([, a], [, b]) => b - a)[0]?.[0] || "None";
-
-          callback({
-            totalUsers,
-            totalDesigns,
-            activeSubscriptions,
-            totalRevenue,
-            newOrdersToday,
-            recentSales,
-            popularDesignType
-          });
-        });
-      });
+  const updateMetrics = () => {
+    callback({
+      totalUsers,
+      totalDesigns,
+      activeSubscriptions,
+      totalRevenue,
+      newOrdersToday,
+      recentSales,
+      popularDesignType
     });
-  });
+  };
+
+  const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
+    totalUsers = snap.size;
+    updateMetrics();
+  }, (error) => handleFirestoreError(error, OperationType.LIST, 'users'));
+
+  const unsubProjects = onSnapshot(collectionGroup(db, "projects"), (snap) => {
+    totalDesigns = snap.size;
+    
+    const typeCounts: Record<string, number> = {};
+    snap.forEach((doc) => {
+      const type = doc.data().type;
+      if (type) typeCounts[type] = (typeCounts[type] || 0) + 1;
+    });
+    popularDesignType = Object.entries(typeCounts)
+      .sort(([, a], [, b]) => b - a)[0]?.[0] || "None";
+    
+    updateMetrics();
+  }, (error) => handleFirestoreError(error, OperationType.LIST, 'projects (group)'));
+
+  const unsubSubs = onSnapshot(query(collection(db, "subscriptions"), where("status", "==", "active")), (snap) => {
+    activeSubscriptions = snap.size;
+    updateMetrics();
+  }, (error) => handleFirestoreError(error, OperationType.LIST, 'subscriptions'));
+
+  const unsubOrders = onSnapshot(query(collection(db, "orders"), where("paymentStatus", "==", "paid")), (snap) => {
+    totalRevenue = 0;
+    newOrdersToday = 0;
+    const orders: Order[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    snap.forEach((doc) => {
+      const data = doc.data() as Order;
+      totalRevenue += data.amount;
+      
+      const createdAt = data.createdAt?.toDate?.() || new Date(data.createdAt);
+      if (createdAt >= today) {
+        newOrdersToday++;
+      }
+      orders.push({ ...data, id: doc.id });
+    });
+
+    recentSales = orders
+      .sort((a, b) => {
+        const dateA = a.createdAt?.seconds || 0;
+        const dateB = b.createdAt?.seconds || 0;
+        return dateB - dateA;
+      })
+      .slice(0, 5);
+
+    updateMetrics();
+  }, (error) => handleFirestoreError(error, OperationType.LIST, 'orders'));
 
   return () => {
     unsubUsers();
-    // Note: In a real app, we'd need to clean up all listeners correctly
+    unsubProjects();
+    unsubSubs();
+    unsubOrders();
   };
 };
 
@@ -135,7 +206,7 @@ export const subscribeToUsers = (callback: (users: UserProfile[]) => void) => {
   return onSnapshot(query(collection(db, "users"), orderBy("createdAt", "desc")), (snap) => {
     const users = snap.docs.map(doc => ({ ...doc.data() as UserProfile, id: doc.id }));
     callback(users);
-  });
+  }, (error) => handleFirestoreError(error, OperationType.LIST, 'users'));
 };
 
 // Project Management
@@ -143,7 +214,7 @@ export const subscribeToAllProjects = (callback: (projects: Project[]) => void) 
   return onSnapshot(collectionGroup(db, "projects"), (snap) => {
     const projects = snap.docs.map(doc => ({ ...doc.data() as Project, id: doc.id }));
     callback(projects);
-  });
+  }, (error) => handleFirestoreError(error, OperationType.LIST, 'projects (group)'));
 };
 
 // Template Management
@@ -151,22 +222,34 @@ export const subscribeToTemplates = (callback: (templates: Template[]) => void) 
   return onSnapshot(query(collection(db, "templates"), orderBy("createdAt", "desc")), (snap) => {
     const templates = snap.docs.map(doc => ({ ...doc.data() as Template, id: doc.id }));
     callback(templates);
-  });
+  }, (error) => handleFirestoreError(error, OperationType.LIST, 'templates'));
 };
 
 export const createTemplate = async (template: Omit<Template, "id" | "createdAt">) => {
-  return addDoc(collection(db, "templates"), {
-    ...template,
-    createdAt: serverTimestamp(),
-  });
+  try {
+    return await addDoc(collection(db, "templates"), {
+      ...template,
+      createdAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, 'templates');
+  }
 };
 
 export const updateTemplate = async (id: string, updates: Partial<Template>) => {
-  return updateDoc(doc(db, "templates", id), updates);
+  try {
+    return await updateDoc(doc(db, "templates", id), updates);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `templates/${id}`);
+  }
 };
 
 export const deleteTemplate = async (id: string) => {
-  return deleteDoc(doc(db, "templates", id));
+  try {
+    return await deleteDoc(doc(db, "templates", id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `templates/${id}`);
+  }
 };
 
 // Blog Management
@@ -174,18 +257,26 @@ export const subscribeToPosts = (callback: (posts: Post[]) => void) => {
   return onSnapshot(query(collection(db, "posts"), orderBy("createdAt", "desc")), (snap) => {
     const posts = snap.docs.map(doc => ({ ...doc.data() as Post, id: doc.id }));
     callback(posts);
-  });
+  }, (error) => handleFirestoreError(error, OperationType.LIST, 'posts'));
 };
 
 export const createPost = async (post: Omit<Post, "id" | "createdAt">) => {
-  return addDoc(collection(db, "posts"), {
-    ...post,
-    createdAt: serverTimestamp(),
-  });
+  try {
+    return await addDoc(collection(db, "posts"), {
+      ...post,
+      createdAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, 'posts');
+  }
 };
 
 export const updatePost = async (id: string, updates: Partial<Post>) => {
-  return updateDoc(doc(db, "posts", id), updates);
+  try {
+    return await updateDoc(doc(db, "posts", id), updates);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `posts/${id}`);
+  }
 };
 
 // Order Management
@@ -193,7 +284,7 @@ export const subscribeToOrders = (callback: (orders: Order[]) => void) => {
   return onSnapshot(query(collection(db, "orders"), orderBy("createdAt", "desc")), (snap) => {
     const orders = snap.docs.map(doc => ({ ...doc.data() as Order, id: doc.id }));
     callback(orders);
-  });
+  }, (error) => handleFirestoreError(error, OperationType.LIST, 'orders'));
 };
 
 // Subscription Management
@@ -201,5 +292,5 @@ export const subscribeToSubscriptions = (callback: (subscriptions: Subscription[
   return onSnapshot(query(collection(db, "subscriptions"), orderBy("startedAt", "desc")), (snap) => {
     const subscriptions = snap.docs.map(doc => ({ ...doc.data() as Subscription, id: doc.id }));
     callback(subscriptions);
-  });
+  }, (error) => handleFirestoreError(error, OperationType.LIST, 'subscriptions'));
 };

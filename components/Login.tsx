@@ -10,7 +10,7 @@ interface LoginProps {
 const Login: React.FC<LoginProps> = ({ onToggle }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string | React.ReactNode>('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -35,7 +35,14 @@ const Login: React.FC<LoginProps> = ({ onToggle }) => {
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
         setError('Email or password is incorrect');
       } else if (err.code === 'auth/operation-not-allowed') {
-        setError('La connexion par e-mail/mot de passe n\'est pas activée dans votre console Firebase. Veuillez l\'activer dans Authentication > Sign-in method.');
+        setError(
+          <span>
+            La connexion par e-mail/mot de passe n'est pas activée. 
+            <a href="https://console.firebase.google.com/project/gen-lang-client-0462787285/authentication/providers" target="_blank" rel="noopener noreferrer" className="underline ml-1">
+              Cliquez ici pour l'activer dans votre console Firebase
+            </a>.
+          </span>
+        );
       } else {
         setError('Something went wrong. Please try again.');
       }
@@ -67,7 +74,14 @@ const Login: React.FC<LoginProps> = ({ onToggle }) => {
         customData: err.customData
       });
       if (err.code === 'auth/operation-not-allowed') {
-        setError('La connexion Google n\'est pas activée dans votre console Firebase. Veuillez l\'activer dans Authentication > Sign-in method.');
+        setError(
+          <span>
+            La connexion Google n'est pas activée. 
+            <a href="https://console.firebase.google.com/project/gen-lang-client-0462787285/authentication/providers" target="_blank" rel="noopener noreferrer" className="underline ml-1">
+              Cliquez ici pour l'activer dans votre console Firebase
+            </a>.
+          </span>
+        );
       } else if (err.code === 'auth/network-request-failed') {
         setError('Erreur réseau : Impossible de contacter les services d\'authentification. Vérifiez votre connexion ou vos extensions de navigateur (bloqueurs de pub).');
       } else if (err.code === 'auth/popup-blocked') {

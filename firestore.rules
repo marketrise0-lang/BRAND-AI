@@ -20,6 +20,10 @@ service cloud.firestore {
          (request.auth.token.email == 'ngwanoloic256@gmail.com' && request.auth.token.email_verified == true));
     }
 
+    match /{path=**}/projects/{projectId} {
+      allow read: if isAdmin();
+    }
+
     function hasRequiredFields(fields) {
       return request.resource.data.keys().hasAll(fields);
     }

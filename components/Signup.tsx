@@ -10,7 +10,7 @@ interface SignupProps {
 const Signup: React.FC<SignupProps> = ({ onToggle }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string | React.ReactNode>('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -35,7 +35,14 @@ const Signup: React.FC<SignupProps> = ({ onToggle }) => {
       if (err.code === 'auth/email-already-in-use') {
         setError('User already exists. Please sign in');
       } else if (err.code === 'auth/operation-not-allowed') {
-        setError('L\'inscription par e-mail/mot de passe n\'est pas activée dans votre console Firebase. Veuillez l\'activer dans Authentication > Sign-in method.');
+        setError(
+          <span>
+            L'inscription par e-mail n'est pas activée. 
+            <a href="https://console.firebase.google.com/project/gen-lang-client-0462787285/authentication/providers" target="_blank" rel="noopener noreferrer" className="underline ml-1">
+              Cliquez ici pour l'activer dans votre console Firebase
+            </a>.
+          </span>
+        );
       } else {
         setError('Something went wrong. Please try again.');
       }
@@ -62,7 +69,14 @@ const Signup: React.FC<SignupProps> = ({ onToggle }) => {
     } catch (err: any) {
       console.error("Google signup error:", err);
       if (err.code === 'auth/operation-not-allowed') {
-        setError('La connexion Google n\'est pas activée dans votre console Firebase. Veuillez l\'activer dans Authentication > Sign-in method.');
+        setError(
+          <span>
+            La connexion Google n'est pas activée. 
+            <a href="https://console.firebase.google.com/project/gen-lang-client-0462787285/authentication/providers" target="_blank" rel="noopener noreferrer" className="underline ml-1">
+              Cliquez ici pour l'activer dans votre console Firebase
+            </a>.
+          </span>
+        );
       } else {
         setError('Something went wrong. Please try again.');
       }
