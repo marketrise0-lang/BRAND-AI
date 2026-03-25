@@ -34,6 +34,8 @@ const Login: React.FC<LoginProps> = ({ onToggle }) => {
       console.error("Login error:", err);
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
         setError('Email or password is incorrect');
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError('La connexion par e-mail/mot de passe n\'est pas activée dans votre console Firebase. Veuillez l\'activer dans Authentication > Sign-in method.');
       } else {
         setError('Something went wrong. Please try again.');
       }
@@ -64,7 +66,9 @@ const Login: React.FC<LoginProps> = ({ onToggle }) => {
         stack: err.stack,
         customData: err.customData
       });
-      if (err.code === 'auth/network-request-failed') {
+      if (err.code === 'auth/operation-not-allowed') {
+        setError('La connexion Google n\'est pas activée dans votre console Firebase. Veuillez l\'activer dans Authentication > Sign-in method.');
+      } else if (err.code === 'auth/network-request-failed') {
         setError('Erreur réseau : Impossible de contacter les services d\'authentification. Vérifiez votre connexion ou vos extensions de navigateur (bloqueurs de pub).');
       } else if (err.code === 'auth/popup-blocked') {
         setError('Le popup de connexion a été bloqué par votre navigateur. Veuillez autoriser les popups pour ce site.');

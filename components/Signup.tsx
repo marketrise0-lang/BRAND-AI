@@ -34,6 +34,8 @@ const Signup: React.FC<SignupProps> = ({ onToggle }) => {
       console.error("Signup error:", err);
       if (err.code === 'auth/email-already-in-use') {
         setError('User already exists. Please sign in');
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError('L\'inscription par e-mail/mot de passe n\'est pas activée dans votre console Firebase. Veuillez l\'activer dans Authentication > Sign-in method.');
       } else {
         setError('Something went wrong. Please try again.');
       }
@@ -59,7 +61,11 @@ const Signup: React.FC<SignupProps> = ({ onToggle }) => {
       navigate('/dashboard');
     } catch (err: any) {
       console.error("Google signup error:", err);
-      setError('Something went wrong. Please try again.');
+      if (err.code === 'auth/operation-not-allowed') {
+        setError('La connexion Google n\'est pas activée dans votre console Firebase. Veuillez l\'activer dans Authentication > Sign-in method.');
+      } else {
+        setError('Something went wrong. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
