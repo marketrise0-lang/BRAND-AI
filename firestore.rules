@@ -37,11 +37,11 @@ service cloud.firestore {
     // ===============================================================
 
     function isValidUser(data) {
-      return hasRequiredFields(['uid', 'email', 'role', 'createdAt']) &&
-             data.uid == request.auth.uid &&
+      return hasRequiredFields(['email']) &&
              data.email is string &&
-             data.role is string &&
-             data.createdAt is timestamp;
+             (!('role' in data) || data.role is string) &&
+             (!('uid' in data) || data.uid == request.auth.uid) &&
+             (!('createdAt' in data) || data.createdAt is timestamp || data.createdAt is string);
     }
 
     function isValidProject(data) {
@@ -51,7 +51,10 @@ service cloud.firestore {
              data.title is string &&
              data.createdAt is timestamp &&
              data.updatedAt is timestamp &&
-             data.status in ['draft', 'completed'];
+             data.status in ['draft', 'completed'] &&
+             // Optional fields
+             (!('previewImage' in data) || data.previewImage is string) &&
+             (!('data' in data) || data.data is map);
     }
 
     function isValidProgress(data) {
@@ -84,15 +87,20 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow create: if isAuthenticated() && isValidUser(request.resource.data);
-      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if (isOwner(userId) || isAdmin()) && 
+                      isValidUser(request.resource.data) && 
+                      (isAdmin() || hasRequiredFields(['uid', 'createdAt']));
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data);
 
       match /projects/{projectId} {
-        allow read: if isOwner(userId);
+        allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidProject(request.resource.data);
-        allow update: if isOwner(userId) && isValidProject(request.resource.data);
-        allow delete: if isOwner(userId);
+        allow update: if isOwner(userId) && (
+          // Allow partial updates as long as the resulting document is valid
+          isValidProject(request.resource.data)
+        );
+        allow delete: if isOwner(userId) || isAdmin();
       }
 
       match /progress/{projectId} {

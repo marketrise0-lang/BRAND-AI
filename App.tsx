@@ -30,6 +30,7 @@ import {
   subscribeToUserSubscription
 } from './src/services/firestoreService';
 import { createAdminProfile } from './src/services/adminService';
+import { uploadBase64Image, processBrandingImages } from './src/services/storageService';
 import MyProjects from './components/dashboard/MyProjects';
 import DesignProgress from './components/dashboard/DesignProgress';
 import MyDownloads from './components/dashboard/MyDownloads';
@@ -37,7 +38,7 @@ import ActivityHistory from './components/dashboard/ActivityHistory';
 import CreateProjectModal from './components/dashboard/CreateProjectModal';
 import ExportDesignModal from './components/dashboard/ExportDesignModal';
 import { BrandProfile, BrandingResult as BrandingType, Project, DesignProgress as ProgressType, Activity, Download, Subscription } from './types';
-import { generateBranding, generateBrandingFromLogo, generateImage, fastAnalyzeContent, generateVideoVeo } from './services/geminiService';
+import { generateBranding, generateBrandingFromLogo, generateImage, generateImagePro, fastAnalyzeContent, generateVideoVeo } from './services/geminiService';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -143,15 +144,51 @@ const Dashboard: React.FC = () => {
 
   const abortControllerRef = React.useRef<AbortController | null>(null);
 
+  const smartGenerateImage = async (prompt: string, refImage?: string, aspectRatio: any = "1:1") => {
+    // Always use standard free model as requested
+    return await generateImage(prompt, refImage, aspectRatio);
+  };
+
   useEffect(() => {
     setIsVisible(true);
-    setHasApiKey(true);
+    
+    const checkApiKey = async () => {
+      if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+        const selected = await window.aistudio.hasSelectedApiKey();
+        setHasApiKey(selected);
+      } else {
+        setHasApiKey(true); // Fallback for local dev or if not in AI Studio environment
+      }
+    };
+    checkApiKey();
+
+    const testConnection = async () => {
+      try {
+        const { getDocFromServer, doc } = await import('firebase/firestore');
+        await getDocFromServer(doc(db, 'test', 'connection'));
+        console.log("Firestore connection test: SUCCESS");
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('the client is offline')) {
+          console.error("Firestore connection test: OFFLINE. Please check your Firebase configuration.");
+        } else {
+          console.log("Firestore connection test (ignoring non-offline error):", error);
+        }
+      }
+    };
+    testConnection();
 
     if (user) {
-      createUserProfile(user.uid, user.email || '', user.displayName || 'User');
-      if (user.email === 'ngwanoloic256@gmail.com') {
-        createAdminProfile(user);
-      }
+      const initUser = async () => {
+        try {
+          await createUserProfile(user.uid, user.email || '', user.displayName || 'User');
+          if (user.email === 'ngwanoloic256@gmail.com') {
+            await createAdminProfile(user);
+          }
+        } catch (e) {
+          console.error("User initialization failed:", e);
+        }
+      };
+      initUser();
       
       const unsubProjects = subscribeToProjects(user.uid, (data) => {
         setProjects(data);
@@ -230,6 +267,7 @@ const Dashboard: React.FC = () => {
   };
 
   const checkUsageLimit = () => {
+    if (isAdmin) return true;
     const isFree = !subscription || subscription.plan === 'free';
     if (isFree && projects.length >= 3) {
       setError({
@@ -254,13 +292,24 @@ const Dashboard: React.FC = () => {
       const projectId = await createProject(user!.uid, {
         title: companyName,
         type: 'logo',
-        status: 'draft',
-        previewImage: logoFile
+        status: 'draft'
       });
       setCurrentProjectId(projectId!);
 
-      const brandingData = await generateBrandingFromLogo(logoFile, companyName);
+      // 1. Start uploading initial logo AND generating branding data IN PARALLEL
+      const uploadLogoTask = uploadBase64Image(user!.uid, projectId!, 'initial_logo.png', logoFile);
+      const brandingDataTask = generateBrandingFromLogo(logoFile, companyName, isAdmin && hasApiKey);
+      
+      // Wait for branding data (needed for visuals) but not necessarily for upload
+      const brandingData = await brandingDataTask;
+      
+      // 2. Start generating other visuals using the base64 logo immediately
       await processBrandingVisuals(brandingData, companyName, logoFile, abortControllerRef.current.signal, projectId!);
+      
+      // Ensure the project preview is updated with the final stored URL
+      const storedLogoUrl = await uploadLogoTask;
+      await updateProject(user!.uid, projectId!, { previewImage: storedLogoUrl });
+      brandingData.logo.generatedImageUrl = storedLogoUrl;
     } catch (err: any) {
       const message = err?.message || String(err);
       const isAbort = err.name === 'AbortError' || 
@@ -302,18 +351,28 @@ const Dashboard: React.FC = () => {
       setCurrentProjectId(projectId!);
 
       fastAnalyzeContent(profileData.mission).then(setFastAnalysis).catch(err => console.warn("Fast analysis skipped due to quota:", err));
-      const brandingData = await generateBranding(profileData);
+      const brandingData = await generateBranding(profileData, isAdmin && hasApiKey);
       
       setLoadingStep("Ingénierie du logotype maître...");
       const colorString = brandingData.styleGuide.colors.map(c => c.hex).join(', ');
       const logoPrompt = `High-end professional minimal vector logo for "${profileData.companyName}". Colors: ${colorString}. Symbol: ${brandingData.logo.description}. Pure white background.`;
-      const masterLogoUrl = await generateImage(logoPrompt);
-      brandingData.logo.generatedImageUrl = masterLogoUrl;
-
-      // Update project preview
-      await updateProject(user!.uid, projectId!, { previewImage: masterLogoUrl });
-
-      await processBrandingVisuals(brandingData, profileData.companyName, masterLogoUrl, abortControllerRef.current.signal, projectId!);
+      
+      // 1. Generate the master logo (Base64)
+      const masterLogoBase64 = await smartGenerateImage(logoPrompt);
+      
+      // 2. Start uploading master logo AND generating other visuals IN PARALLEL
+      // We don't wait for the upload to start generating variations/mockups
+      const uploadMasterTask = uploadBase64Image(user!.uid, projectId!, 'master_logo.png', masterLogoBase64);
+      
+      // We pass the base64 directly to speed up the start of other generations
+      await processBrandingVisuals(brandingData, profileData.companyName, masterLogoBase64, abortControllerRef.current.signal, projectId!);
+      
+      // Ensure the master logo URL is updated with the stored version at the end
+      const storedMasterLogoUrl = await uploadMasterTask;
+      brandingData.logo.generatedImageUrl = storedMasterLogoUrl;
+      
+      // Update project preview with the final stored URL
+      await updateProject(user!.uid, projectId!, { previewImage: storedMasterLogoUrl });
     } catch (err: any) {
       const message = err?.message || String(err);
       const isAbort = err.name === 'AbortError' || 
@@ -345,7 +404,6 @@ const Dashboard: React.FC = () => {
   };
 
   const processBrandingVisuals = async (brandingData: BrandingType, companyName: string, logoUrl: string, signal?: AbortSignal, projectId?: string) => {
-    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
     const primaryColor = brandingData.styleGuide.colors[0].hex;
     const secondaryColor = brandingData.styleGuide.colors[1]?.hex || primaryColor;
 
@@ -355,193 +413,126 @@ const Dashboard: React.FC = () => {
       brandingData.logo.generatedImageUrl = logoUrl;
     }
 
-    if (projectId) {
-      await updateProgress(user!.uid, projectId, {
-        totalSteps: 5,
-        completedSteps: 2,
-        progressPercent: 40,
-        lastAction: 'Génération des variations techniques'
-      });
-    }
+    setLoadingStep("Génération simultanée de l'écosystème de marque...");
 
-    setLoadingStep("Calcul des 5 variations techniques...");
-    const variationsPrompts = [
-      `Minimalist icon-only version of the logo. Flat design. White background.`,
-      `Pure black silhouette of the logo on white background. No colors.`,
-      `Logo variation: the logo is entirely white, placed on a solid background of color ${primaryColor}.`,
-      `Logo on a deep charcoal black background. Modern high-end aesthetic.`,
-      `Small square favicon version of the central symbol. High legibility.`
-    ];
-    
-    const v1 = await generateImage(variationsPrompts[0], logoUrl);
-    if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-    await delay(2000);
-    const v2 = await generateImage(variationsPrompts[1], logoUrl);
-    if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-    await delay(2000);
-    const v3 = await generateImage(variationsPrompts[2], logoUrl);
-    if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-    await delay(2000);
-    const v4 = await generateImage(variationsPrompts[3], logoUrl);
-    if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-    await delay(2000);
-    const v5 = await generateImage(variationsPrompts[4], logoUrl);
-    if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-
-    brandingData.logo.simplifiedImageUrl = v1;
-    brandingData.logo.monochromeImageUrl = v2;
-    brandingData.logo.invertedImageUrl = v3;
-    brandingData.logo.darkBgImageUrl = v4;
-    brandingData.logo.faviconImageUrl = v5;
-
-    if (projectId) {
-      await updateProgress(user!.uid, projectId, {
-        totalSteps: 5,
-        completedSteps: 3,
-        progressPercent: 60,
-        lastAction: 'Génération des actifs Motion'
-      });
-    }
-
-    await delay(3000);
-    if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-
-    setLoadingStep("Génération des actifs Motion Design (Logo Animation)...");
     try {
-        const motionPromptPrimary = language === 'fr' 
-            ? `Animation cinématographique subtile avec respiration et reflets lumineux de ce logo. Contraste élevé, professionnel, 4k, boucle parfaite.`
-            : `Cinematic subtle breathing and light sheen animation of this logo. High contrast, professional, 4k, loopable.`;
-        
-        const motionPromptMono = language === 'fr'
-            ? `Animation de révélation minimaliste de ce logo. Lignes épurées, mouvement fluide, fond blanc.`
-            : `Minimalist reveal animation of this logo. Clean lines, smooth motion, white background.`;
-        
-        const animPrimary = await generateVideoVeo(logoUrl, motionPromptPrimary, true, signal);
-        if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-        await delay(5000);
-        const animMono = await generateVideoVeo(v2, motionPromptMono, true, signal);
-        
-        brandingData.logo.animatedVariations = {
-            primaryUrl: animPrimary,
-            monochromeUrl: animMono
-        };
+      // PROMPTS PREPARATION
+      const variationsPrompts = [
+        `Minimalist icon-only version of the logo. Flat design. White background.`,
+        `Pure black silhouette of the logo on white background. No colors.`,
+        `Logo variation: the logo is entirely white, placed on a solid background of color ${primaryColor}.`,
+        `Logo on a deep charcoal black background. Modern high-end aesthetic.`,
+        `Small square favicon version of the central symbol. High legibility.`
+      ];
 
-        if (projectId) {
-          await updateProgress(user!.uid, projectId, {
-            totalSteps: 5,
-            completedSteps: 4,
-            progressPercent: 80,
-            lastAction: 'Génération des supports Print'
-          });
-        }
+      const businessCardPrompt = `PRESTIGE MOCKUP: Luxury business card design for ${companyName}. Front and back view. Minimalist, using ${primaryColor} and ${secondaryColor}. Elegant typography.`;
+      const flyerPrompt = `PRESTIGE MOCKUP: High-end professional A4 flyer for ${companyName}. Modern layout, clean sections, displaying the logo and brand pattern.`;
+
+      const mockupPool = [
+        `MOCKUP: Luxury website header on a Macbook Pro, logo "${companyName}" visible in nav. High-end UI.`,
+        `MOCKUP: Modern smartphone showing a brand app icon and splash screen for ${companyName}.`,
+        `MOCKUP: High-end shipping box with large logo print of ${companyName}.`,
+        `MOCKUP: Interior office wall with 3D logo sign of ${companyName} and modern furniture.`,
+        `MOCKUP: Premium Hoodie with a small discrete logo embroidery of ${companyName} on the chest.`,
+        `MOCKUP: Professional T-shirt with a bold graphic print of the ${companyName} logo.`,
+        `MOCKUP: Large outdoor street banner showcasing the ${companyName} brand identity.`,
+        `MOCKUP: Minimalist tote bag with the ${companyName} logo.`,
+        `MOCKUP: Luxury vehicle wrap with the ${companyName} branding.`,
+        `MOCKUP: High-end stationery set with letterhead and envelopes for ${companyName}.`
+      ];
+      const shuffledMockups = [...mockupPool].sort(() => 0.5 - Math.random()).slice(0, 5);
+
+      const colorString = brandingData.styleGuide.colors.map(c => c.hex).join(', ');
+      const patternPrompt = `Seamless high-end brand pattern. Concept: ${brandingData.styleGuide.graphicElements.patternConcept}. Colors: ${colorString}.`;
+      const mainMockupPrompt = `MASTER PRESTIGE MOCKUP: Complete stationery set for ${companyName} with envelopes and letterheads.`;
+
+      // MASSIVE PARALLEL GENERATION (14 images at once)
+      const [
+        v1, v2, v3, v4, v5,
+        bcUrl, flyerUrl,
+        m1, m2, m3, m4, m5,
+        patternUrl, mainMockupUrl
+      ] = await Promise.all([
+        // Variations
+        smartGenerateImage(variationsPrompts[0], logoUrl),
+        smartGenerateImage(variationsPrompts[1], logoUrl),
+        smartGenerateImage(variationsPrompts[2], logoUrl),
+        smartGenerateImage(variationsPrompts[3], logoUrl),
+        smartGenerateImage(variationsPrompts[4], logoUrl),
+        // Print
+        smartGenerateImage(businessCardPrompt, logoUrl),
+        smartGenerateImage(flyerPrompt, logoUrl),
+        // Mockups
+        smartGenerateImage(shuffledMockups[0], logoUrl),
+        smartGenerateImage(shuffledMockups[1], logoUrl),
+        smartGenerateImage(shuffledMockups[2], logoUrl),
+        smartGenerateImage(shuffledMockups[3], logoUrl),
+        smartGenerateImage(shuffledMockups[4], logoUrl),
+        // Final
+        smartGenerateImage(patternPrompt, logoUrl),
+        smartGenerateImage(mainMockupPrompt, logoUrl)
+      ]);
+
+      if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
+
+      // ASSIGN RESULTS
+      brandingData.logo.simplifiedImageUrl = v1;
+      brandingData.logo.monochromeImageUrl = v2;
+      brandingData.logo.invertedImageUrl = v3;
+      brandingData.logo.darkBgImageUrl = v4;
+      brandingData.logo.faviconImageUrl = v5;
+
+      brandingData.styleGuide.ecosystem.print.businessCardImageUrl = bcUrl;
+      brandingData.styleGuide.ecosystem.print.flyerImageUrl = flyerUrl;
+
+      brandingData.styleGuide.extraMockups = [m1, m2, m3, m4, m5];
+
+      brandingData.styleGuide.graphicElements.patternImageUrl = patternUrl;
+      brandingData.styleGuide.mockupImageUrl = mainMockupUrl;
+
     } catch (e: any) {
-        const message = e?.message || String(e);
-        if (e.name === 'AbortError' || message.toLowerCase().includes("aborted") || message.toLowerCase().includes("the user aborted a request")) throw e;
-        console.warn("Motion Asset Generation Warning:", e);
+      const message = e?.message || String(e);
+      if (e.name === 'AbortError' || message.toLowerCase().includes("aborted") || message.toLowerCase().includes("the user aborted a request")) throw e;
+      console.warn("Massive Generation Warning:", e);
     }
 
-    await delay(4000);
-    if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-
-    // Skip video generation for free users (Starter plan)
-    const isFree = !subscription || subscription.plan === 'free';
-    
-    if (!isFree) {
-      setLoadingStep(language === 'fr' ? "Production de la vidéo promotionnelle d'élite..." : "Producing elite promotional video...");
-      try {
-        const videoPrompt = language === 'fr'
-          ? `Vidéo promotionnelle ultra-dynamique et cinématographique pour le logo de ${companyName}. 
-             Fond visuellement riche avec des textures abstraites élégantes, des particules de lumière et des dégradés profonds. 
-             Utilise les couleurs : ${primaryColor}, ${secondaryColor}. 
-             Style : ${brandingData.styleGuide.visualStyle}. 
-             Mouvement de caméra fluide et percutant, révélant le logo avec prestige.`
-          : `Ultra-dynamic and cinematic promotional video for the ${companyName} logo. 
-             Visually rich background with elegant abstract textures, light particles, and deep gradients. 
-             Uses colors: ${primaryColor}, ${secondaryColor}. 
-             Style: ${brandingData.styleGuide.visualStyle}. 
-             Impactful camera movement, revealing the logo with prestige.`;
-             
-        brandingData.styleGuide.ecosystem.promoVideoUrl = await generateVideoVeo(logoUrl, videoPrompt, true, signal);
-      } catch (e: any) { 
-        const message = e?.message || String(e);
-        if (e.name === 'AbortError' || message.toLowerCase().includes("aborted") || message.toLowerCase().includes("the user aborted a request")) throw e;
-        console.warn("Veo/Video Generation Warning:", e); 
-      }
-
-      await delay(4000);
-      if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-    }
-
-    setLoadingStep("Conception des supports Print de prestige...");
-    const businessCardPrompt = `PRESTIGE MOCKUP: Luxury business card design for ${companyName}. Front and back view. Minimalist, using ${primaryColor} and ${secondaryColor}. Elegant typography.`;
-    const flyerPrompt = `PRESTIGE MOCKUP: High-end professional A4 flyer for ${companyName}. Modern layout, clean sections, displaying the logo and brand pattern.`;
-    
-    const bcUrl = await generateImage(businessCardPrompt, logoUrl);
-    if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-    await delay(2500);
-    const flyerUrl = await generateImage(flyerPrompt, logoUrl);
-    if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-
-    brandingData.styleGuide.ecosystem.print.businessCardImageUrl = bcUrl;
-    brandingData.styleGuide.ecosystem.print.flyerImageUrl = flyerUrl;
-
-    await delay(3000);
-    if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-
-    setLoadingStep("Génération des 5 mockups contextuels...");
-    const mockupPool = [
-      `MOCKUP: Luxury website header on a Macbook Pro, logo "${companyName}" visible in nav. High-end UI.`,
-      `MOCKUP: Modern smartphone showing a brand app icon and splash screen for ${companyName}.`,
-      `MOCKUP: High-end shipping box with large logo print of ${companyName}.`,
-      `MOCKUP: Interior office wall with 3D logo sign of ${companyName} and modern furniture.`,
-      `MOCKUP: Premium Hoodie with a small discrete logo embroidery of ${companyName} on the chest. High resolution 2k detail.`,
-      `MOCKUP: Professional T-shirt with a bold graphic print of the ${companyName} logo. High resolution 2k detail.`,
-      `MOCKUP: Large outdoor street banner showcasing the ${companyName} brand identity. High resolution 2k detail.`,
-      `MOCKUP: Minimalist tote bag with the ${companyName} logo.`,
-      `MOCKUP: Luxury vehicle wrap with the ${companyName} branding.`,
-      `MOCKUP: High-end stationery set with letterhead and envelopes for ${companyName}.`
-    ];
-    
-    const shuffledMockups = [...mockupPool].sort(() => 0.5 - Math.random()).slice(0, 5);
-    
-    const mockups: string[] = [];
-    for (const prompt of shuffledMockups) {
-      const enhancedPrompt = `${prompt} Ultra-high resolution, 2k detail, professional photography, studio lighting.`;
-      mockups.push(await generateImage(enhancedPrompt, logoUrl));
-      if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-      await delay(2500); 
-    }
-    brandingData.styleGuide.extraMockups = mockups;
-
-    setLoadingStep("Finalisation du Brand Book...");
-    const colorString = brandingData.styleGuide.colors.map(c => c.hex).join(', ');
-    const patternPrompt = `Seamless high-end brand pattern. Concept: ${brandingData.styleGuide.graphicElements.patternConcept}. Colors: ${colorString}.`;
-    brandingData.styleGuide.graphicElements.patternImageUrl = await generateImage(patternPrompt, logoUrl);
     if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
     
-    await delay(2000);
-    if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-    
-    const mainMockupPrompt = `MASTER PRESTIGE MOCKUP: Complete stationery set for ${companyName} with envelopes and letterheads.`;
-    brandingData.styleGuide.mockupImageUrl = await generateImage(mainMockupPrompt, logoUrl);
-    if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-
     if (projectId) {
-      await updateProgress(user!.uid, projectId, {
-        totalSteps: 5,
-        completedSteps: 5,
-        progressPercent: 100,
-        lastAction: 'Projet Terminé'
-      });
-      await updateProject(user!.uid, projectId, { 
-        status: 'completed',
-        data: brandingData,
-        previewImage: brandingData.logo.generatedImageUrl
-      });
-      await logActivity(user!.uid, {
-        type: 'logo_generation',
-        projectId
-      });
+      try {
+        await updateProgress(user!.uid, projectId, {
+          totalSteps: 5,
+          completedSteps: 5,
+          progressPercent: 100,
+          lastAction: 'Projet Terminé'
+        });
+      } catch (e) { console.warn("Final progress update failed:", e); }
+
+      // Process all images to storage before saving the full branding data
+      setLoadingStep("Optimisation et stockage des actifs...");
+      try {
+        const processedBrandingData = await processBrandingImages(user!.uid, projectId, brandingData);
+
+        await updateProject(user!.uid, projectId, { 
+          status: 'completed',
+          data: processedBrandingData,
+          previewImage: processedBrandingData.logo.generatedImageUrl
+        });
+        await logActivity(user!.uid, {
+          type: 'logo_generation',
+          projectId
+        });
+      } catch (e) {
+        console.error("Final project update failed:", e);
+        // Fallback: update with raw data if storage fails (might hit limit but better than nothing)
+        try {
+          await updateProject(user!.uid, projectId, { 
+            status: 'completed',
+            data: brandingData,
+            previewImage: brandingData.logo.generatedImageUrl
+          });
+        } catch (innerE) { console.error("Critical: Final fallback update failed:", innerE); }
+      }
     }
 
     setResult(brandingData);
@@ -768,6 +759,8 @@ const Dashboard: React.FC = () => {
                   data={result} 
                   onUpdateMockups={handleUpdateMockups}
                   companyName={brandProfile?.companyName || "Marque Absolue"}
+                  isAdmin={isAdmin}
+                  hasApiKey={hasApiKey}
                 />
               </div>
             )}

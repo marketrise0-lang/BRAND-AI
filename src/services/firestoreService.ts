@@ -46,8 +46,14 @@ interface FirestoreErrorInfo {
 }
 
 const handleFirestoreError = (error: unknown, operationType: OperationType, path: string | null) => {
+  const message = error instanceof Error ? error.message : String(error);
+  
+  if (message.includes('unavailable') || message.includes('offline')) {
+    console.error("Firestore is currently unavailable or offline. This might be a network issue or a configuration problem.");
+  }
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: message,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,

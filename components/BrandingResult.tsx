@@ -11,11 +11,13 @@ interface BrandingResultProps {
   companyName: string;
   profile?: BrandProfile;
   language?: 'fr' | 'en';
+  isAdmin?: boolean;
+  hasApiKey?: boolean;
 }
 
 type SectionKey = 'cover' | 'toc' | 'dna' | 'manifesto' | 'blueprint' | 'usage' | 'typography' | 'elements' | 'print' | 'ecosystem' | 'social' | 'packaging' | 'mockups' | 'palette' | 'logic' | 'strategy' | 'future' | 'thanks';
 
-const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, companyName, profile, language = 'fr' }) => {
+const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, companyName, profile, language = 'fr', isAdmin = false, hasApiKey = false }) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const [selectedSections, setSelectedSections] = useState<SectionKey[]>(['cover', 'toc', 'dna', 'manifesto', 'blueprint', 'usage', 'typography', 'elements', 'print', 'ecosystem', 'social', 'packaging', 'mockups', 'palette', 'logic', 'strategy', 'future', 'thanks']);
   const [isZipping, setIsZipping] = useState(false);
@@ -128,7 +130,8 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
       const post = await generateBrandLaunchPost(
         companyName, 
         data.styleGuide.ecosystem.digital.webInterface || "Innovation", 
-        data.styleGuide.visualStyle
+        data.styleGuide.visualStyle,
+        isAdmin && hasApiKey
       );
       setLaunchPost(post);
     } catch (e) {

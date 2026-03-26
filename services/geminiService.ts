@@ -8,7 +8,7 @@ const getAI = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || proc
 /**
  * Helper to handle retries for API calls hitting quota limits (429)
  */
-async function withRetry<T>(fn: () => Promise<T>, retries = 5, backoff = 5000): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, retries = 5, backoff = 2000): Promise<T> {
   try {
     return await fn();
   } catch (error: any) {
@@ -41,7 +41,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 5, backoff = 5000): 
       console.warn(`Quota exceeded, retrying in ${backoff}ms... (${retries} attempts left)`);
       await new Promise(resolve => setTimeout(resolve, backoff));
       // Exponential backoff with jitter
-      const nextBackoff = backoff * 2 + Math.floor(Math.random() * 2000);
+      const nextBackoff = backoff * 1.5 + Math.floor(Math.random() * 1000);
       return withRetry(fn, retries - 1, nextBackoff);
     }
     throw error;
@@ -213,26 +213,12 @@ const BRANDING_SCHEMA = {
   required: ["logo", "styleGuide", "analysis"],
 };
 
-export const generateBranding = async (profile: BrandProfile): Promise<BrandingResult> => {
+export const generateBranding = async (profile: BrandProfile, usePro: boolean = false): Promise<BrandingResult> => {
   return withRetry(async () => {
     const ai = getAI();
+    // Force free model for now as requested by user
+    const model = "gemini-3-flash-preview";
     const prompt = `
-      Génère une identité de marque EXCLUSIVE pour "${profile.companyName}".
-      Secteur : ${profile.industry}
-      Positionnement : ${profile.positioning}
-
-      Inclus dans le JSON :
-      - uniquenessFactor : Pourquoi ce logo est structurellement unique ?
-      - differentiationStrategy : Stratégie visuelle.
-      - svgPath : CHAÎNE DE CARACTÈRES 'D' (viewBox 0 0 512 512).
-      - Des spécifications pour les cartes de visite et flyers incluant la disposition.
-      
-      Réponds en JSON uniquement.
-    `;
-
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
@@ -245,9 +231,11 @@ export const generateBranding = async (profile: BrandProfile): Promise<BrandingR
   });
 };
 
-export const generateBrandingFromLogo = async (logoBase64: string, companyName: string): Promise<BrandingResult> => {
+export const generateBrandingFromLogo = async (logoBase64: string, companyName: string, usePro: boolean = false): Promise<BrandingResult> => {
   return withRetry(async () => {
     const ai = getAI();
+    // Force free model for now as requested by user
+    const model = "gemini-3-flash-preview";
     const cleanBase64 = logoBase64.replace(/^data:image\/\w+;base64,/, "");
     
     const prompt = `
@@ -264,7 +252,7 @@ export const generateBrandingFromLogo = async (logoBase64: string, companyName: 
     `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: model,
       contents: [
         { text: prompt },
         { inlineData: { mimeType: 'image/png', data: cleanBase64 } }
@@ -281,28 +269,12 @@ export const generateBrandingFromLogo = async (logoBase64: string, companyName: 
   });
 };
 
-export const generateImagePro = async (prompt: string, aspectRatio: any = "1:1"): Promise<string> => {
-  return withRetry(async () => {
-    const ai = getAI();
-    const enhancedPrompt = `
-      MASTERPIECE BRANDING ASSET: ${prompt}. 
-      Style: Ultra-premium, high-end commercial photography, 8k resolution, cinematic lighting, sharp focus on textures. 
-      Aesthetic: Minimalist yet sophisticated, iconic and unmistakable. 
-      Background: Clean, professional studio setting.
-    `;
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-image-preview',
-      contents: { parts: [{ text: enhancedPrompt }] },
-      config: { imageConfig: { aspectRatio: aspectRatio, imageSize: "1K" } }
-    });
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
-    }
-    throw new Error("Erreur de génération d'image Pro.");
-  });
+export const generateImagePro = async (prompt: string, base64ReferenceImage?: string, aspectRatio: any = "1:1"): Promise<string> => {
+  // Fallback to free image model as requested
+  return generateImage(prompt, base64ReferenceImage, aspectRatio);
 };
 
-export const generateImage = async (prompt: string, base64ReferenceImage?: string): Promise<string> => {
+export const generateImage = async (prompt: string, base64ReferenceImage?: string, aspectRatio: any = "1:1"): Promise<string> => {
   return withRetry(async () => {
     const ai = getAI();
     const enhancedPrompt = `
@@ -321,7 +293,7 @@ export const generateImage = async (prompt: string, base64ReferenceImage?: strin
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: { parts: parts },
-      config: { imageConfig: { aspectRatio: "1:1" } }
+      config: { imageConfig: { aspectRatio: aspectRatio } }
     });
     for (const part of response.candidates?.[0]?.content?.parts || []) {
       if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
@@ -350,77 +322,17 @@ export const editImageWithPrompt = async (base64Image: string, prompt: string): 
   });
 };
 
-export const generateVideoVeo = async (base64Image: string, prompt: string, isLandscape: boolean = true, signal?: AbortSignal): Promise<string> => {
-  return withRetry(async () => {
-    const ai = getAI();
-    const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
-    
-    let operation = await ai.models.generateVideos({
-      model: 'veo-3.1-fast-generate-preview',
-      prompt: prompt,
-      image: {
-        imageBytes: cleanBase64,
-        mimeType: 'image/png',
-      },
-      config: {
-        numberOfVideos: 1,
-        resolution: '720p',
-        aspectRatio: isLandscape ? '16:9' : '9:16'
-      }
-    });
-
-    while (!operation.done) {
-      if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-      await new Promise(resolve => setTimeout(resolve, 10000));
-      if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
-      operation = await ai.operations.getVideosOperation({ operation: operation });
-    }
-
-    const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-    if (!downloadLink) throw new Error("Video download link not found.");
-    
-    try {
-      console.log(`Attempting to download video from: ${downloadLink}`);
-      const videoResponse = await fetch(downloadLink, {
-        method: 'GET',
-        headers: {
-          'x-goog-api-key': process.env.GEMINI_API_KEY || process.env.API_KEY || "",
-        },
-        signal
-      });
-
-      if (!videoResponse.ok) {
-        console.error(`Video download failed for ${downloadLink}: ${videoResponse.status} ${videoResponse.statusText}`);
-        throw new Error(`Failed to download video: ${videoResponse.statusText}`);
-      }
-      console.log(`Successfully downloaded video from: ${downloadLink}`);
-      const videoBlob = await videoResponse.blob();
-      return URL.createObjectURL(videoBlob);
-    } catch (err: any) {
-      const message = err?.message || String(err);
-      const isAbort = err.name === 'AbortError' || 
-                     err.name === 'CanceledError' ||
-                     err.code === 20 ||
-                     message.toLowerCase().includes("aborted") || 
-                     message.toLowerCase().includes("the user aborted a request") ||
-                     message.toLowerCase().includes("signal is aborted") ||
-                     message.toLowerCase().includes("canceled");
-      
-      if (isAbort) {
-        console.log("Video download aborted intentionally");
-        throw err;
-      }
-      console.error("Error downloading video:", err);
-      throw new Error(`Erreur lors du téléchargement de la vidéo: ${err.message}`);
-    }
-  });
+export const generateVideoVeo = async (base64Image: string, prompt: string, isLandscape: boolean = true, signal?: AbortSignal, usePro: boolean = false): Promise<string> => {
+  // Skip video generation as it requires a paid API key and user requested to skip
+  console.log("Skipping Veo video generation (Paid API required)");
+  return ""; 
 };
 
 export const startStrategyChat = async (message: string, history: any[] = []) => {
   return withRetry(async () => {
     const ai = getAI();
     const chat = ai.chats.create({
-      model: 'gemini-3.1-pro-preview',
+      model: 'gemini-3-flash-preview',
       config: {
         systemInstruction: 'Tu es un expert en branding senior et consultant en stratégie de marque. Réponds de manière concise, professionnelle et inspirante.',
       },
@@ -441,7 +353,7 @@ export const fastAnalyzeContent = async (text: string): Promise<string> => {
   });
 };
 
-export const generateBrandLaunchPost = async (companyName: string, industry: string, visualStyle: string): Promise<string> => {
+export const generateBrandLaunchPost = async (companyName: string, industry: string, visualStyle: string, usePro: boolean = false): Promise<string> => {
   return withRetry(async () => {
     const ai = getAI();
     const prompt = `
@@ -457,7 +369,7 @@ export const generateBrandLaunchPost = async (companyName: string, industry: str
       Utilise des emojis pertinents mais avec parcimonie (style professionnel).
     `;
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: usePro ? "gemini-3.1-pro-preview" : "gemini-3-flash-preview",
       contents: prompt,
     });
     return response.text || "Erreur de génération du texte.";
