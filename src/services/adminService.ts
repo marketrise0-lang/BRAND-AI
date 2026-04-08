@@ -210,11 +210,54 @@ export const subscribeToUsers = (callback: (users: UserProfile[]) => void) => {
 };
 
 // Project Management
-export const subscribeToAllProjects = (callback: (projects: Project[]) => void) => {
+export const subscribeToAllProjects = (callback: (projects: (Project & { path: string })[]) => void) => {
   return onSnapshot(collectionGroup(db, "projects"), (snap) => {
-    const projects = snap.docs.map(doc => ({ ...doc.data() as Project, id: doc.id }));
+    const projects = snap.docs.map(doc => ({ ...doc.data() as Project, id: doc.id, path: doc.ref.path }));
     callback(projects);
   }, (error) => handleFirestoreError(error, OperationType.LIST, 'projects (group)'));
+};
+
+export const updateSystemProject = async (path: string, updates: Partial<Project>) => {
+  try {
+    const projectRef = doc(db, path);
+    await updateDoc(projectRef, {
+      ...updates,
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+};
+
+export const deleteSystemProject = async (path: string) => {
+  try {
+    const projectRef = doc(db, path);
+    await deleteDoc(projectRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+};
+
+export const deleteAllSystemProjects = async () => {
+  try {
+    const [projectsSnap, progressSnap, activitySnap, downloadsSnap] = await Promise.all([
+      getDocs(collectionGroup(db, "projects")),
+      getDocs(collectionGroup(db, "progress")),
+      getDocs(collectionGroup(db, "activity")),
+      getDocs(collectionGroup(db, "downloads"))
+    ]);
+
+    const batch = writeBatch(db);
+    
+    projectsSnap.docs.forEach(doc => batch.delete(doc.ref));
+    progressSnap.docs.forEach(doc => batch.delete(doc.ref));
+    activitySnap.docs.forEach(doc => batch.delete(doc.ref));
+    downloadsSnap.docs.forEach(doc => batch.delete(doc.ref));
+
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, 'all_system_projects');
+  }
 };
 
 // Template Management

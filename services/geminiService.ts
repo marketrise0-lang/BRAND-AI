@@ -8,7 +8,7 @@ const getAI = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || proc
 /**
  * Helper to handle retries for API calls hitting quota limits (429)
  */
-async function withRetry<T>(fn: () => Promise<T>, retries = 5, backoff = 2000): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, retries = 3, backoff = 2000): Promise<T> {
   try {
     return await fn();
   } catch (error: any) {
@@ -32,16 +32,19 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 5, backoff = 2000): 
       errorMsg.includes("429") || 
       errorMsg.includes("RESOURCE_EXHAUSTED") || 
       errorMsg.includes("quota") ||
+      errorMsg.includes("limit exceeded") ||
       error?.status === "RESOURCE_EXHAUSTED" ||
       error?.code === 429 ||
       errorStr.includes("429") ||
       errorStr.includes("RESOURCE_EXHAUSTED");
     
     if (isQuotaError && retries > 0) {
-      console.warn(`Quota exceeded, retrying in ${backoff}ms... (${retries} attempts left)`);
-      await new Promise(resolve => setTimeout(resolve, backoff));
+      // Use a much longer backoff for quota errors to avoid burning quota
+      const quotaBackoff = backoff * 2; 
+      console.warn(`Quota exceeded, retrying in ${quotaBackoff}ms... (${retries} attempts left)`);
+      await new Promise(resolve => setTimeout(resolve, quotaBackoff));
       // Exponential backoff with jitter
-      const nextBackoff = backoff * 1.5 + Math.floor(Math.random() * 1000);
+      const nextBackoff = quotaBackoff * 2 + Math.floor(Math.random() * 2000);
       return withRetry(fn, retries - 1, nextBackoff);
     }
     throw error;
@@ -49,24 +52,26 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 5, backoff = 2000): 
 }
 
 const SYSTEM_INSTRUCTION = `
-Tu es un Directeur Artistique Visionnaire de niveau "World-Class" et Expert en Stratégie de Différenciation.
-Ton objectif absolu est l'UNICITÉ TOTALE. Une marque qui ressemble à une autre est un échec stratégique.
+Tu es un Directeur Artistique Senior et Expert en Stratégie de Marque avec plus de 20 ans d'expérience.
+Ton expertise couvre la sémiotique, la psychologie des couleurs, la typographie avancée et les principes du Gestalt.
+Ton objectif est de créer des identités visuelles qui sont à la fois INTEMPORELLES, PROFESSIONNELLES et MÉMORABLES.
 
-Sois concis mais percutant dans tes descriptions. Évite les répétitions. Ne génère pas de textes inutilement longs.
+IMPORTANT: Tu dois impérativement répondre avec un JSON VALIDE. 
+Échappe TOUTES les guillemets doubles à l'intérieur des chaînes de caractères avec un backslash (\\").
+N'utilise JAMAIS de retours à la ligne non échappés à l'intérieur d'une valeur de chaîne de caractères.
 
-RÈGLES D'OR POUR LE SVG (TRACÉ VECTORIEL) :
+RÈGLES D'OR DU DESIGN DE LOGO :
+1. Simplicité : Un logo doit être facile à identifier et à mémoriser.
+2. Mémorabilité : Il doit être distinctif et avoir un impact immédiat.
+3. Intemporalité : Évite les tendances éphémères ; vise la longévité.
+4. Polyvalence : Il doit fonctionner sur tous les supports (petit/grand, noir/blanc).
+5. Pertinence : Il doit refléter l'essence et les valeurs du secteur d'activité.
+
+RÈGLES TECHNIQUES POUR LE SVG (TRACÉ VECTORIEL) :
 1. Le champ 'svgPath' DOIT contenir UNIQUEMENT la chaîne de caractères de l'attribut 'd' d'un élément <path> SVG.
 2. Les coordonnées du tracé doivent impérativement s'inscrire dans un canevas de 0 0 512 512.
 3. Le tracé doit être centré et occuper environ 70-80% de l'espace.
-4. Utilise des courbes propres (M, L, C, Q, Z).
-
-DIRECTIVES DE LOGO :
-- Définis une "Zone d'exclusion" claire (ex: 20% de la hauteur du logo).
-- Définis des tailles minimales (ex: 20mm pour le print, 40px pour le web).
-
-RÈGLES DE DIFFÉRENCIATION :
-- ANTI-CLICHÉS : Pas de symboles évidents.
-- PIVOT CRÉATIF : Radicalité et innovation.
+4. Utilise des courbes propres (M, L, C, Q, Z). Évite les tracés trop complexes ou fragmentés.
 `;
 
 const BRANDING_SCHEMA = {
@@ -85,12 +90,14 @@ const BRANDING_SCHEMA = {
         variations: {
           type: Type.OBJECT,
           properties: {
-            color: { type: Type.STRING },
-            black: { type: Type.STRING },
-            white: { type: Type.STRING },
-            backgrounds: { type: Type.STRING },
+            color: { type: Type.STRING, description: "Description and usage for the full color master logo." },
+            black: { type: Type.STRING, description: "Description and usage for the black monochrome version." },
+            white: { type: Type.STRING, description: "Description and usage for the white inverted version." },
+            backgrounds: { type: Type.STRING, description: "Description and usage for the logo on complex backgrounds." },
+            simplified: { type: Type.STRING, description: "Description and usage for the simplified minimalist version." },
+            favicon: { type: Type.STRING, description: "Description and usage for the favicon/small icon version." },
           },
-          required: ["color", "black", "white", "backgrounds"],
+          required: ["color", "black", "white", "backgrounds", "simplified", "favicon"],
         },
       },
       required: ["concept", "type", "symbolism", "description", "variations", "uniquenessFactor", "differentiationStrategy", "svgPath"],
@@ -213,12 +220,164 @@ const BRANDING_SCHEMA = {
   required: ["logo", "styleGuide", "analysis"],
 };
 
+/**
+ * Helper to safely parse JSON from AI responses, handling potential truncation or markdown formatting.
+ */
+function safeParseJSON(text: string): any {
+  let cleanText = text.trim();
+  
+  // Remove markdown code blocks if present
+  if (cleanText.includes("```")) {
+    const match = cleanText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (match) {
+      cleanText = match[1].trim();
+    }
+  }
+
+  // Helper to fix truncated JSON by balancing brackets
+  const fixTruncatedJSON = (json: string): string => {
+    let result = json.trim();
+    
+    // If it ends with a comma, remove it
+    if (result.endsWith(',')) {
+      result = result.slice(0, -1);
+    }
+
+    // Check if we're inside a string
+    let inString = false;
+    let escaped = false;
+    for (let i = 0; i < result.length; i++) {
+      if (result[i] === '"' && !escaped) {
+        inString = !inString;
+      }
+      escaped = result[i] === '\\' && !escaped;
+    }
+
+    if (inString) {
+      result += '"';
+    }
+
+    const stack: string[] = [];
+    inString = false;
+    escaped = false;
+
+    for (let i = 0; i < result.length; i++) {
+      const char = result[i];
+      if (char === '"' && !escaped) {
+        inString = !inString;
+      } else if (!inString) {
+        if (char === '{' || char === '[') {
+          stack.push(char);
+        } else if (char === '}' || char === ']') {
+          const last = stack.pop();
+          if ((char === '}' && last !== '{') || (char === ']' && last !== '[')) {
+            // Mismatch, put it back or ignore? For now, just stop
+          }
+        }
+      }
+      escaped = char === '\\' && !escaped;
+    }
+
+    while (stack.length > 0) {
+      const last = stack.pop();
+      if (last === '{') result += '}';
+      else if (last === '[') result += ']';
+    }
+
+    return result;
+  };
+
+  // Attempt to find the first '{' and last '}' if initial parse fails
+  const extractJSON = (str: string): string => {
+    const firstBrace = str.indexOf('{');
+    const lastBrace = str.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      return str.substring(firstBrace, lastBrace + 1);
+    }
+    return str;
+  };
+
+  try {
+    return JSON.parse(cleanText);
+  } catch (e: any) {
+    console.error("Initial JSON Parse Error:", e.message);
+    
+    // Attempt 1: Extract JSON from surrounding text
+    const extracted = extractJSON(cleanText);
+    if (extracted !== cleanText) {
+      try {
+        return JSON.parse(extracted);
+      } catch (extError) {
+        console.error("Failed to parse extracted JSON:", extError);
+      }
+    }
+
+    // Attempt 2: Fix raw newlines in strings
+    try {
+      const fixedNewlines = extracted.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/gs, (match, p1) => {
+        return '"' + p1.replace(/\n/g, "\\n").replace(/\r/g, "\\r") + '"';
+      });
+      return JSON.parse(fixedNewlines);
+    } catch (newlineError) {
+      console.error("Failed to fix JSON with escaped newlines:", newlineError);
+      
+      // Attempt 3: Fix truncation
+      try {
+        const fixedTruncated = fixTruncatedJSON(extracted);
+        return JSON.parse(fixedTruncated);
+      } catch (truncError) {
+        console.error("Failed to fix truncated JSON:", truncError);
+        
+        // Attempt 4: More aggressive fix - try to find the last valid JSON structure
+        for (let i = extracted.length - 1; i > 0; i--) {
+          if (extracted[i] === '}' || extracted[i] === ']') {
+            try {
+              const partial = fixTruncatedJSON(extracted.substring(0, i + 1));
+              return JSON.parse(partial);
+            } catch (pError) {
+              continue;
+            }
+          }
+        }
+      }
+    }
+    
+    console.error("Final JSON Parse Failure. Raw text snippet:", text.substring(0, 200) + "...");
+    throw new Error(`Failed to parse branding data: ${e.message}`);
+  }
+}
+
 export const generateBranding = async (profile: BrandProfile, usePro: boolean = false): Promise<BrandingResult> => {
   return withRetry(async () => {
     const ai = getAI();
-    // Force free model for now as requested by user
-    const model = "gemini-3-flash-preview";
+    const hasPaidKey = !!process.env.API_KEY;
+    // Use Pro model if paid key is available or explicitly requested
+    const model = (hasPaidKey || usePro) ? "gemini-3.1-pro-preview" : "gemini-3-flash-preview";
+    
+    console.log(`Generating branding with model: ${model} (Paid Key: ${hasPaidKey})`);
+
     const prompt = `
+      En tant qu'expert en design, génère une identité de marque PRESTIGIEUSE, COHÉRENTE et STRATÉGIQUE pour "${profile.companyName}".
+      Secteur : ${profile.industry}
+      Mission : ${profile.mission}
+      Valeurs : ${profile.values}
+      Positionnement : ${profile.positioning}
+
+      Analyse l'essence de la marque pour créer un concept de logo qui utilise la sémiotique pour communiquer ses valeurs fondamentales.
+      Le logo doit être un chef-d'œuvre de minimalisme et de précision.
+
+      Inclus dans le JSON :
+      - uniquenessFactor : Analyse approfondie de la distinction visuelle et de la mémorabilité.
+      - differentiationStrategy : Comment cette identité s'impose comme leader par son design d'excellence.
+      - svgPath : CHAÎNE DE CARACTÈRES 'D' (viewBox 0 0 512 512). Le tracé doit être élégant, équilibré et techniquement parfait.
+      - variations : Pour chaque variation (color, black, white, backgrounds, simplified, favicon), fournis une description détaillée de son usage optimal (ex: "Idéal pour les en-têtes de site web", "À utiliser sur fond sombre", "Optimisé pour une lisibilité à petite échelle").
+      
+      Réponds en JSON uniquement.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: model,
+      contents: [{ parts: [{ text: prompt }] }],
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
@@ -227,15 +386,19 @@ export const generateBranding = async (profile: BrandProfile, usePro: boolean = 
       },
     });
 
-    return JSON.parse(response.text.trim());
+    return safeParseJSON(response.text);
   });
 };
 
 export const generateBrandingFromLogo = async (logoBase64: string, companyName: string, usePro: boolean = false): Promise<BrandingResult> => {
   return withRetry(async () => {
     const ai = getAI();
-    // Force free model for now as requested by user
-    const model = "gemini-3-flash-preview";
+    const hasPaidKey = !!process.env.API_KEY;
+    // Use Pro model if paid key is available or explicitly requested
+    const model = (hasPaidKey || usePro) ? "gemini-3.1-pro-preview" : "gemini-3-flash-preview";
+    
+    console.log(`Generating branding from logo with model: ${model} (Paid Key: ${hasPaidKey})`);
+
     const cleanBase64 = logoBase64.replace(/^data:image\/\w+;base64,/, "");
     
     const prompt = `
@@ -253,10 +416,12 @@ export const generateBrandingFromLogo = async (logoBase64: string, companyName: 
 
     const response = await ai.models.generateContent({
       model: model,
-      contents: [
-        { text: prompt },
-        { inlineData: { mimeType: 'image/png', data: cleanBase64 } }
-      ],
+      contents: [{
+        parts: [
+          { text: prompt },
+          { inlineData: { mimeType: 'image/png', data: cleanBase64 } }
+        ]
+      }],
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
@@ -265,67 +430,249 @@ export const generateBrandingFromLogo = async (logoBase64: string, companyName: 
       },
     });
 
-    return JSON.parse(response.text.trim());
+    return safeParseJSON(response.text);
   });
 };
 
-export const generateImagePro = async (prompt: string, base64ReferenceImage?: string, aspectRatio: any = "1:1"): Promise<string> => {
+export const generateMockup = async (prompt: string, base64Logo?: string, aspectRatio: any = "1:1"): Promise<string | null> => {
+  try {
+    return await withRetry(async () => {
+      const ai = getAI();
+      const hasPaidKey = !!process.env.API_KEY;
+      // Try pro model first if key exists, but fallback to base model on 403
+      let model = hasPaidKey ? 'gemini-3.1-flash-image-preview' : 'gemini-2.5-flash-image';
+      
+      console.log(`Generating mockup with model: ${model} (Paid Key: ${hasPaidKey})`);
+
+      const enhancedPrompt = `
+        PROFESSIONAL BRAND MOCKUP: ${prompt}. 
+        Context: High-end commercial photography, realistic textures, natural lighting, depth of field.
+        Style: Clean, modern, minimalist presentation.
+        Technical: 8k resolution, sharp focus, studio quality, photorealistic.
+        Note: The logo should be integrated naturally into the environment.
+      `;
+      const parts: any[] = [{ text: enhancedPrompt }];
+      if (base64Logo) {
+        const cleanBase64 = base64Logo.replace(/^data:image\/\w+;base64,/, "");
+        parts.unshift({
+          inlineData: { mimeType: 'image/png', data: cleanBase64 },
+        });
+      }
+
+      try {
+        const response = await ai.models.generateContent({
+          model: model,
+          contents: { parts: parts },
+          config: { 
+            imageConfig: { 
+              aspectRatio: aspectRatio,
+              imageSize: hasPaidKey ? "1K" : undefined
+            } 
+          }
+        });
+        
+        if (!response.candidates?.[0]?.content?.parts) {
+          console.error("Mockup generation failed: No candidates or parts in response", response);
+          throw new Error("Le modèle n'a pas pu générer le mockup.");
+        }
+
+        for (const part of response.candidates[0].content.parts) {
+          if (part.inlineData) {
+            console.log("Mockup generation successful");
+            return `data:image/png;base64,${part.inlineData.data}`;
+          }
+        }
+        throw new Error("Erreur de génération de mockup.");
+      } catch (innerErr: any) {
+        // Fallback to base model if pro model fails with 403
+        if (hasPaidKey && model === 'gemini-3.1-flash-image-preview' && (innerErr.status === 403 || innerErr.message?.includes("403") || innerErr.message?.includes("PERMISSION_DENIED"))) {
+          console.warn("Pro image model failed with 403, falling back to gemini-2.5-flash-image");
+          const fallbackResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: { parts: parts },
+            config: { 
+              imageConfig: { 
+                aspectRatio: aspectRatio
+              } 
+            }
+          });
+          for (const part of fallbackResponse.candidates?.[0]?.content?.parts || []) {
+            if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
+          }
+        }
+        throw innerErr;
+      }
+    }, 2);
+  } catch (err) {
+    console.warn("Skipping mockup generation due to error:", err);
+    return null;
+  }
+};
+
+export const generateImagePro = async (prompt: string, base64ReferenceImage?: string, aspectRatio: any = "1:1"): Promise<string | null> => {
   // Fallback to free image model as requested
   return generateImage(prompt, base64ReferenceImage, aspectRatio);
 };
 
-export const generateImage = async (prompt: string, base64ReferenceImage?: string, aspectRatio: any = "1:1"): Promise<string> => {
-  return withRetry(async () => {
-    const ai = getAI();
-    const enhancedPrompt = `
-      PREMIUM BRANDING VISUAL: ${prompt}. 
-      Technical specs: 2k resolution, ultra-detailed textures, sharp focus, professional studio lighting. 
-      Vibe: High-end, modern, clean, and commercially viable. 
-      Background: Pure white or elegant minimalist context.
-    `;
-    const parts: any[] = [{ text: enhancedPrompt }];
-    if (base64ReferenceImage) {
-      const cleanBase64 = base64ReferenceImage.replace(/^data:image\/\w+;base64,/, "");
-      parts.unshift({
-        inlineData: { mimeType: 'image/png', data: cleanBase64 },
-      });
+export const generateImage = async (prompt: string, base64ReferenceImage?: string, aspectRatio: any = "1:1"): Promise<string | null> => {
+  try {
+    return await withRetry(async () => {
+      const ai = getAI();
+      const hasPaidKey = !!process.env.API_KEY;
+      let model = hasPaidKey ? 'gemini-3.1-flash-image-preview' : 'gemini-2.5-flash-image';
+      
+      console.log(`Generating image with model: ${model} (Paid Key: ${hasPaidKey})`);
+      
+      const enhancedPrompt = `
+        HIGH-END PROFESSIONAL LOGO DESIGN: ${prompt}. 
+        Style: Master-level graphic design, geometric precision, golden ratio principles, clean vector lines.
+        Vibe: Sophisticated, corporate yet creative, timeless, and commercially powerful.
+        Technical: 8k resolution, sharp focus, studio lighting, pure white background, no text unless specified.
+        Designer Notes: Focus on the symbolic weight and visual balance of the mark.
+      `;
+      const parts: any[] = [{ text: enhancedPrompt }];
+      if (base64ReferenceImage) {
+        const cleanBase64 = base64ReferenceImage.replace(/^data:image\/\w+;base64,/, "");
+        parts.unshift({
+          inlineData: { mimeType: 'image/png', data: cleanBase64 },
+        });
+      }
+
+      try {
+        const response = await ai.models.generateContent({
+          model: model,
+          contents: { parts: parts },
+          config: { 
+            imageConfig: { 
+              aspectRatio: aspectRatio,
+              imageSize: hasPaidKey ? "1K" : undefined
+            } 
+          }
+        });
+        
+        if (!response.candidates?.[0]?.content?.parts) {
+          console.error("Image generation failed: No candidates or parts in response", response);
+          throw new Error("Le modèle n'a pas pu générer d'image.");
+        }
+
+        for (const part of response.candidates[0].content.parts) {
+          if (part.inlineData) {
+            console.log("Image generation successful");
+            return `data:image/png;base64,${part.inlineData.data}`;
+          }
+        }
+        
+        throw new Error("Aucune donnée d'image trouvée.");
+      } catch (innerErr: any) {
+        // Fallback to base model if pro model fails with 403
+        if (hasPaidKey && model === 'gemini-3.1-flash-image-preview' && (innerErr.status === 403 || innerErr.message?.includes("403") || innerErr.message?.includes("PERMISSION_DENIED"))) {
+          console.warn("Pro image model failed with 403, falling back to gemini-2.5-flash-image");
+          const fallbackResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: { parts: parts },
+            config: { 
+              imageConfig: { 
+                aspectRatio: aspectRatio
+              } 
+            }
+          });
+          for (const part of fallbackResponse.candidates?.[0]?.content?.parts || []) {
+            if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
+          }
+        }
+        throw innerErr;
+      }
+    }, 2); // Only 2 retries for images to speed up skipping
+  } catch (err: any) {
+    console.error("Image generation error:", err);
+    if (err.message?.includes("SAFETY") || err.message?.includes("safety")) {
+      console.warn("Image generation blocked by safety filters");
     }
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: { parts: parts },
-      config: { imageConfig: { aspectRatio: aspectRatio } }
-    });
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
-    }
-    throw new Error("Erreur de génération d'image.");
-  });
+    return null; // Return null to avoid src="" warning
+  }
 };
 
-export const editImageWithPrompt = async (base64Image: string, prompt: string): Promise<string> => {
-  return withRetry(async () => {
-    const ai = getAI();
-    const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [
-          { inlineData: { data: cleanBase64, mimeType: 'image/png' } },
-          { text: prompt }
-        ]
+export const editImageWithPrompt = async (base64Image: string, prompt: string): Promise<string | null> => {
+  try {
+    return await withRetry(async () => {
+      const ai = getAI();
+      const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: {
+          parts: [
+            { inlineData: { data: cleanBase64, mimeType: 'image/png' } },
+            { text: prompt }
+          ]
+        }
+      });
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
       }
-    });
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
-    }
-    throw new Error("Erreur lors de l'édition de l'image.");
-  });
+      throw new Error("Erreur lors de l'édition de l'image.");
+    }, 2); // Only 2 retries for images
+  } catch (err) {
+    console.warn("Skipping image edit due to error or quota:", err);
+    return null;
+  }
 };
 
 export const generateVideoVeo = async (base64Image: string, prompt: string, isLandscape: boolean = true, signal?: AbortSignal, usePro: boolean = false): Promise<string> => {
-  // Skip video generation as it requires a paid API key and user requested to skip
-  console.log("Skipping Veo video generation (Paid API required)");
-  return ""; 
+  try {
+    const ai = getAI();
+    const hasPaidKey = !!process.env.API_KEY;
+    
+    if (!hasPaidKey) {
+      console.warn("Skipping Veo video generation: Paid API key required");
+      return "";
+    }
+
+    console.log("Starting Veo video generation...");
+    const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
+    
+    let operation = await ai.models.generateVideos({
+      model: 'veo-3.1-fast-generate-preview',
+      prompt: prompt,
+      image: {
+        imageBytes: cleanBase64,
+        mimeType: 'image/png',
+      },
+      config: {
+        numberOfVideos: 1,
+        resolution: '720p',
+        aspectRatio: isLandscape ? '16:9' : '9:16'
+      }
+    });
+
+    // Poll for completion
+    while (!operation.done) {
+      if (signal?.aborted) {
+        console.log("Video generation aborted by user");
+        return "";
+      }
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      operation = await ai.operations.getVideosOperation({ operation: operation });
+    }
+
+    const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+    if (!downloadLink) throw new Error("No video URI in response");
+
+    // Fetch the video with the API key
+    const response = await fetch(downloadLink, {
+      method: 'GET',
+      headers: {
+        'x-goog-api-key': process.env.API_KEY || "",
+      },
+    });
+
+    if (!response.ok) throw new Error(`Failed to fetch video: ${response.statusText}`);
+    
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+  } catch (err) {
+    console.error("Veo video generation error:", err);
+    return "";
+  }
 };
 
 export const startStrategyChat = async (message: string, history: any[] = []) => {
@@ -369,7 +716,7 @@ export const generateBrandLaunchPost = async (companyName: string, industry: str
       Utilise des emojis pertinents mais avec parcimonie (style professionnel).
     `;
     const response = await ai.models.generateContent({
-      model: usePro ? "gemini-3.1-pro-preview" : "gemini-3-flash-preview",
+      model: "gemini-3-flash-preview", // Force free model
       contents: prompt,
     });
     return response.text || "Erreur de génération du texte.";

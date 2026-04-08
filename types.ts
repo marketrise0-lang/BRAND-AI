@@ -67,6 +67,8 @@ export interface BrandingResult {
       black: string;
       white: string;
       backgrounds: string;
+      simplified: string;
+      favicon: string;
     };
     generatedImageUrl?: string;
     simplifiedImageUrl?: string;

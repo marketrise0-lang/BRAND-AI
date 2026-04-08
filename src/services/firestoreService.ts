@@ -194,6 +194,33 @@ export const recordDownload = async (uid: string, download: Omit<Download, 'id' 
   }
 };
 
+export const deleteAllUserProjects = async (uid: string) => {
+  const projectsPath = `users/${uid}/projects`;
+  const progressPath = `users/${uid}/progress`;
+  const activityPath = `users/${uid}/activity`;
+  const downloadsPath = `users/${uid}/downloads`;
+
+  try {
+    const [projectsSnap, progressSnap, activitySnap, downloadsSnap] = await Promise.all([
+      getDocs(collection(db, projectsPath)),
+      getDocs(collection(db, progressPath)),
+      getDocs(collection(db, activityPath)),
+      getDocs(collection(db, downloadsPath))
+    ]);
+
+    const deletePromises: Promise<void>[] = [];
+
+    projectsSnap.docs.forEach(doc => deletePromises.push(deleteDoc(doc.ref)));
+    progressSnap.docs.forEach(doc => deletePromises.push(deleteDoc(doc.ref)));
+    activitySnap.docs.forEach(doc => deletePromises.push(deleteDoc(doc.ref)));
+    downloadsSnap.docs.forEach(doc => deletePromises.push(deleteDoc(doc.ref)));
+
+    await Promise.all(deletePromises);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, projectsPath);
+  }
+};
+
 // Real-time Listeners
 export const subscribeToProjects = (uid: string, callback: (projects: Project[]) => void) => {
   const path = `users/${uid}/projects`;

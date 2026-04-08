@@ -1,7 +1,7 @@
 
 import React, { useRef, useState } from 'react';
 import { BrandProfile, BrandingResult as BrandingType } from '../types';
-import { generateImage, generateBrandLaunchPost } from '../services/geminiService';
+import { generateImage, generateBrandLaunchPost, generateVideoVeo } from '../services/geminiService';
 // @ts-ignore
 import JSZip from 'jszip';
 
@@ -15,19 +15,93 @@ interface BrandingResultProps {
   hasApiKey?: boolean;
 }
 
-type SectionKey = 'cover' | 'toc' | 'dna' | 'manifesto' | 'blueprint' | 'usage' | 'typography' | 'elements' | 'print' | 'ecosystem' | 'social' | 'packaging' | 'mockups' | 'palette' | 'logic' | 'strategy' | 'future' | 'thanks';
+type SectionKey = 'cover' | 'toc' | 'dna' | 'manifesto' | 'visualIdentity' | 'geometricBlueprint' | 'usage' | 'typography' | 'elements' | 'print' | 'ecosystem' | 'social' | 'packaging' | 'mockups' | 'palette' | 'logic' | 'strategy' | 'future' | 'thanks';
 
 const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, companyName, profile, language = 'fr', isAdmin = false, hasApiKey = false }) => {
   const contentRef = useRef<HTMLDivElement>(null);
-  const [selectedSections, setSelectedSections] = useState<SectionKey[]>(['cover', 'toc', 'dna', 'manifesto', 'blueprint', 'usage', 'typography', 'elements', 'print', 'ecosystem', 'social', 'packaging', 'mockups', 'palette', 'logic', 'strategy', 'future', 'thanks']);
+  const [selectedSections, setSelectedSections] = useState<SectionKey[]>(['cover', 'toc', 'dna', 'manifesto', 'visualIdentity', 'geometricBlueprint', 'usage', 'typography', 'elements', 'print', 'ecosystem', 'social', 'packaging', 'mockups', 'palette', 'logic', 'strategy', 'future', 'thanks']);
   const [isZipping, setIsZipping] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [launchPost, setLaunchPost] = useState<string | null>(null);
   const [isGeneratingPost, setIsGeneratingPost] = useState(false);
-  const [copySuccess, setCopySuccess] = useState(false);
-  const [contextualMockups, setContextualMockups] = useState<string[]>(data.styleGuide.extraMockups || []);
+  const [copySuccess, setCopySuccess] = useState<string | null>(null);
+
+  const handleCopyText = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopySuccess(id);
+    setTimeout(() => setCopySuccess(null), 2000);
+  };
+
+  const CopyButton: React.FC<{ text: string, id: string, className?: string }> = ({ text, id, className = "" }) => (
+    <button 
+      onClick={() => handleCopyText(text, id)}
+      className={`p-2 bg-white/10 hover:bg-white/20 rounded-lg transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${className}`}
+      title="Copy to clipboard"
+    >
+      {copySuccess === id ? (
+        <>
+          <svg className="w-3 h-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
+          <span className="text-green-400">Copied!</span>
+        </>
+      ) : (
+        <>
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+          <span>Copy</span>
+        </>
+      )}
+    </button>
+  );
+  const [contextualMockups, setContextualMockups] = useState<string[]>(data.styleGuide?.extraMockups || []);
   const [isGeneratingMockups, setIsGeneratingMockups] = useState(false);
+  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(data.logo.animatedVariations?.primaryUrl || null);
+  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const zipAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Local state for on-demand images
+  const [localImages, setLocalImages] = useState({
+    simplified: data.logo.simplifiedImageUrl || null,
+    inverted: data.logo.invertedImageUrl || null,
+    monochrome: data.logo.monochromeImageUrl || null,
+    darkBg: data.logo.darkBgImageUrl || null,
+    businessCard: data.styleGuide?.ecosystem?.print?.businessCardImageUrl || null,
+    flyer: data.styleGuide?.ecosystem?.print?.flyerImageUrl || null,
+    pattern: data.styleGuide?.graphicElements?.patternImageUrl || null,
+  });
+  const [generatingImages, setGeneratingImages] = useState<Record<string, boolean>>({});
+
+  const handleGenerateSpecificImage = async (key: keyof typeof localImages, prompt: string) => {
+    if (generatingImages[key]) return;
+    
+    setGeneratingImages(prev => ({ ...prev, [key]: true }));
+    try {
+      const result = await generateImage(prompt, data.logo.generatedImageUrl);
+      if (result) {
+        setLocalImages(prev => ({ ...prev, [key]: result }));
+      }
+    } catch (error) {
+      console.error(`Error generating ${key}:`, error);
+    } finally {
+      setGeneratingImages(prev => ({ ...prev, [key]: false }));
+    }
+  };
+
+  const GenerateButton = ({ onClick, isGenerating, label }: { onClick: () => void, isGenerating: boolean, label: string }) => (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      disabled={isGenerating}
+      className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2 shadow-lg"
+    >
+      {isGenerating ? (
+        <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+      ) : (
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+      )}
+      {label}
+    </button>
+  );
 
   const getCleanPath = (rawPath: string | undefined): string => {
     if (!rawPath) return "";
@@ -55,7 +129,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
     );
   };
 
-  const createSVGFile = (color: string = data.styleGuide.colors[0].hex): Blob => {
+  const createSVGFile = (color: string = data.styleGuide?.colors?.[0]?.hex || "#4f46e5"): Blob => {
     const svgHeader = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg width="1024px" height="1024px" viewBox="0 0 512 512" version="1.1" xmlns="http://www.w3.org/2000/svg">
     <title>${companyName} Master Logo Vector</title>
@@ -67,8 +141,8 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
     return new Blob([svgHeader], { type: 'image/svg+xml' });
   };
 
-  const createLogoWithTextSVGFile = (color: string = data.styleGuide.colors[0].hex): Blob => {
-    const font = data.styleGuide.typography.titles.fontFamily || 'sans-serif';
+  const createLogoWithTextSVGFile = (color: string = data.styleGuide?.colors?.[0]?.hex || "#4f46e5"): Blob => {
+    const font = data.styleGuide?.typography?.titles?.fontFamily || 'sans-serif';
     const svgContent = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg width="1200px" height="400px" viewBox="0 0 600 200" version="1.1" xmlns="http://www.w3.org/2000/svg">
     <title>${companyName} Logo with Text</title>
@@ -82,7 +156,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
     return new Blob([svgContent], { type: 'image/svg+xml' });
   };
 
-  const createGeometricSVGFile = (color: string = data.styleGuide.colors[0].hex): Blob => {
+  const createGeometricSVGFile = (color: string = data.styleGuide?.colors?.[0]?.hex || "#4f46e5"): Blob => {
     const svgContent = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg width="1024px" height="1024px" viewBox="0 0 512 512" version="1.1" xmlns="http://www.w3.org/2000/svg">
     <title>${companyName} Geometric Blueprint</title>
@@ -129,8 +203,8 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
     try {
       const post = await generateBrandLaunchPost(
         companyName, 
-        data.styleGuide.ecosystem.digital.webInterface || "Innovation", 
-        data.styleGuide.visualStyle,
+        data.styleGuide?.ecosystem?.digital?.webInterface || "Innovation", 
+        data.styleGuide?.visualStyle || "Modern",
         isAdmin && hasApiKey
       );
       setLaunchPost(post);
@@ -144,8 +218,8 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
   const handleCopyPost = () => {
     if (launchPost) {
       navigator.clipboard.writeText(launchPost);
-      setCopySuccess(true);
-      setTimeout(() => setCopySuccess(false), 2000);
+      setCopySuccess('post');
+      setTimeout(() => setCopySuccess(null), 2000);
     }
   };
 
@@ -156,12 +230,17 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
         `Professional website header mockup with the logo of ${companyName} in a clean, modern navigation bar. High-end UI design.`,
         `Social media profile mockup for ${companyName} showing the logo on a smartphone screen. Instagram/LinkedIn style.`,
         `Premium business card mockup for ${companyName} on a textured paper background. Minimalist and elegant.`,
-        `Luxury product packaging mockup for ${companyName} with the logo embossed on a high-quality box.`,
-        `Modern shop sign mockup for ${companyName} on a sleek storefront in a premium urban location.`
+        `Luxury product packaging mockup for ${companyName} with the logo embossed on a high-quality box or container.`,
+        `Modern shop sign mockup for ${companyName} on a sleek storefront in a premium urban location. High-end signage.`
       ];
       
-      const results = await Promise.all(prompts.map(p => generateImage(p, data.logo.generatedImageUrl)));
-      setContextualMockups(results);
+      const results = [];
+      for (const p of prompts) {
+        const res = await generateImage(p, data.logo.generatedImageUrl);
+        results.push(res);
+        // Update state incrementally so user sees progress and we don't lose everything if one fails
+        setContextualMockups([...results]);
+      }
       if (onUpdateMockups) onUpdateMockups(results);
     } catch (e) {
       console.error(e);
@@ -170,11 +249,28 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
     }
   };
 
+  const handleGenerateVideo = async () => {
+    if (!data.logo.generatedImageUrl || isGeneratingVideo) return;
+    setIsGeneratingVideo(true);
+    try {
+      const prompt = `Cinematic logo animation for ${companyName}. The logo reveals itself through elegant light streaks and fluid motion. High-end motion graphics, professional reveal.`;
+      const videoUrl = await generateVideoVeo(data.logo.generatedImageUrl, prompt);
+      if (videoUrl) {
+        setGeneratedVideoUrl(videoUrl);
+      }
+    } catch (e) {
+      console.error("Failed to generate video:", e);
+    } finally {
+      setIsGeneratingVideo(false);
+    }
+  };
+
   const handleDownloadAssets = async () => {
     setIsZipping(true);
     const zip = new JSZip();
     
-    // 1. Identity Folder
+    const colors = data.styleGuide?.colors || [];
+    const primaryColor = colors[0]?.hex || "#4f46e5";
     const identity = zip.folder("01_Identity");
     const source = identity.folder("Source");
     
@@ -184,36 +280,50 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
         source.file(`${companyName.replace(/\s+/g, '_')}_With_Text.svg`, createLogoWithTextSVGFile());
     }
 
-    // Helper to add base64 images
-    const addImg = (folder: any, name: string, dataUrl?: string) => {
-        if (dataUrl) {
-            const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, "");
-            folder.file(name, base64Data, { base64: true });
+    // Helper to add assets (handles both base64 and URLs)
+    const addAsset = async (folder: any, name: string, url?: string) => {
+        if (!url) return;
+        
+        try {
+            if (url.startsWith('data:')) {
+                const base64Data = url.replace(/^data:image\/\w+;base64,/, "");
+                folder.file(name, base64Data, { base64: true });
+            } else {
+                const response = await fetch(url);
+                if (response.ok) {
+                    const blob = await response.blob();
+                    folder.file(name, blob);
+                }
+            }
+        } catch (err) {
+            console.error(`Failed to add asset ${name}:`, err);
         }
     };
 
-    addImg(identity, "logo_master.png", data.logo.generatedImageUrl);
-    addImg(identity, "logo_monochrome.png", data.logo.monochromeImageUrl);
-    addImg(identity, "logo_inverted.png", data.logo.invertedImageUrl);
-    addImg(identity, "favicon.png", data.logo.faviconImageUrl);
+    const assetPromises: Promise<void>[] = [];
+
+    assetPromises.push(addAsset(identity, "logo_master.png", data.logo.generatedImageUrl));
+    assetPromises.push(addAsset(identity, "logo_monochrome.png", localImages.monochrome || data.logo.monochromeImageUrl));
+    assetPromises.push(addAsset(identity, "logo_inverted.png", localImages.inverted || data.logo.invertedImageUrl));
+    assetPromises.push(addAsset(identity, "logo_simplified.png", localImages.simplified || data.logo.simplifiedImageUrl));
+    assetPromises.push(addAsset(identity, "logo_dark_bg.png", localImages.darkBg || data.logo.darkBgImageUrl));
+    assetPromises.push(addAsset(identity, "favicon.png", data.logo.faviconImageUrl));
 
     // 2. Mockups Folder
     const mockups = zip.folder("02_Mockups");
-    addImg(mockups, "business_card.png", data.styleGuide.ecosystem.print.businessCardImageUrl);
-    addImg(mockups, "flyer.png", data.styleGuide.ecosystem.print.flyerImageUrl);
-    addImg(mockups, "stationery_set.png", data.styleGuide.mockupImageUrl);
+    assetPromises.push(addAsset(mockups, "business_card.png", localImages.businessCard || data.styleGuide?.ecosystem?.print?.businessCardImageUrl));
+    assetPromises.push(addAsset(mockups, "flyer.png", localImages.flyer || data.styleGuide?.ecosystem?.print?.flyerImageUrl));
+    assetPromises.push(addAsset(mockups, "stationery_set.png", data.styleGuide?.mockupImageUrl));
     
-    data.styleGuide.extraMockups?.forEach((m, i) => {
-        addImg(mockups, `extra_mockup_${i+1}.png`, m);
-    });
-
     contextualMockups.forEach((m, i) => {
-        addImg(mockups, `contextual_mockup_${i+1}.png`, m);
+        assetPromises.push(addAsset(mockups, `mockup_${i+1}.png`, m));
     });
 
     // 3. Elements
     const elements = zip.folder("03_Elements");
-    addImg(elements, "brand_pattern.png", data.styleGuide.graphicElements.patternImageUrl);
+    assetPromises.push(addAsset(elements, "brand_pattern.png", localImages.pattern || data.styleGuide?.graphicElements?.patternImageUrl));
+
+    await Promise.all(assetPromises);
 
     // 4. Motion (Async Fetch)
     if (data.logo.animatedVariations) {
@@ -302,15 +412,34 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
   };
 
   const handleDownloadPDF = async () => {
+    if (!contentRef.current) return;
     setIsGeneratingPDF(true);
     
     // Small delay to ensure loading state is visible
     await new Promise(resolve => setTimeout(resolve, 500));
 
     try {
-      window.print();
+      const element = contentRef.current;
+      const opt = {
+        margin: 0,
+        filename: `${companyName.replace(/\s+/g, '_')}_BRAND_GUIDELINES.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { 
+          scale: 2, 
+          useCORS: true, 
+          letterRendering: true,
+          logging: false
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+
+      // @ts-ignore
+      await html2pdf().set(opt).from(element).save();
     } catch (e) {
       console.error("PDF generation error", e);
+      // Fallback to print if html2pdf fails
+      window.print();
     } finally {
       setIsGeneratingPDF(false);
     }
@@ -352,7 +481,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
 
             <div className="relative z-10 space-y-16 text-center">
               <div className="w-64 h-64 bg-white rounded-[4rem] flex items-center justify-center mx-auto shadow-[0_0_100px_rgba(79,70,229,0.4)] border-8 border-white/5 p-12 transform hover:scale-105 transition-transform duration-700">
-                 <img src={data.logo.faviconImageUrl} className="w-full h-full object-contain" alt="Master Symbol" />
+                 {data.logo.faviconImageUrl && <img src={data.logo.faviconImageUrl} className="w-full h-full object-contain" alt="Master Symbol" />}
               </div>
               <div className="space-y-8">
                 <h1 className="text-[10rem] font-black tracking-tighter text-white leading-[0.8] uppercase drop-shadow-2xl">{companyName}</h1>
@@ -388,23 +517,23 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                     {language === 'fr' ? 'Index des Directives' : 'Guidelines Index'}
                   </span>
                 </div>
-                
-                <div className="grid grid-cols-2 gap-x-16 gap-y-8 max-w-5xl">
+                                <div className="grid grid-cols-2 gap-x-16 gap-y-8 max-w-5xl">
                   {[
-                    { id: '01', title: language === 'fr' ? 'ADN de Marque' : 'Brand DNA', desc: language === 'fr' ? 'Mission, Vision et Valeurs Stratégiques' : 'Mission, Vision and Strategic Values' },
-                    { id: '02', title: language === 'fr' ? 'Architecture Visuelle' : 'Visual Architecture', desc: language === 'fr' ? 'Blueprint & Tracés Géométriques' : 'Blueprint & Geometric Traces' },
-                    { id: '03', title: language === 'fr' ? 'Usage du Logo' : 'Logo Usage', desc: language === 'fr' ? 'Règles d\'Intégrité et Zones de Protection' : 'Integrity Rules and Protection Zones' },
-                    { id: '04', title: language === 'fr' ? 'Typographie' : 'Typography', desc: language === 'fr' ? 'Système de Polices et Hiérarchie' : 'Font System and Hierarchy' },
-                    { id: '05', title: language === 'fr' ? 'Éléments Graphiques' : 'Graphic Elements', desc: language === 'fr' ? 'Motifs, Textures et Formes' : 'Patterns, Textures and Shapes' },
-                    { id: '06', title: language === 'fr' ? 'Supports Print' : 'Print Materials', desc: language === 'fr' ? 'Papeterie et Matériel Promotionnel' : 'Stationery and Promotional Material' },
-                    { id: '07', title: language === 'fr' ? 'Écosystème Digital' : 'Digital Ecosystem', desc: language === 'fr' ? 'Présence Web et Motion Design' : 'Web Presence and Motion Design' },
-                    { id: '08', title: language === 'fr' ? 'Stratégie Sociale' : 'Social Strategy', desc: language === 'fr' ? 'Engagement et Présence Sociale' : 'Engagement and Social Presence' },
-                    { id: '09', title: language === 'fr' ? 'Packaging & Matériaux' : 'Packaging & Materials', desc: language === 'fr' ? 'Expérience Produit et Finitions' : 'Product Experience and Finishes' },
-                    { id: '10', title: language === 'fr' ? 'Mockups Contextuels' : 'Contextual Mockups', desc: language === 'fr' ? 'Projections Réelles et Immersion' : 'Real Projections and Immersion' },
-                    { id: '11', title: language === 'fr' ? 'Nuancier Technique' : 'Technical Palette', desc: language === 'fr' ? 'Spécifications Chromatiques' : 'Chromatic Specifications' },
-                    { id: '12', title: language === 'fr' ? 'Logique de Conception' : 'Design Logic', desc: language === 'fr' ? 'Standards et Règles de Design' : 'Design Standards and Rules' },
-                    { id: '13', title: language === 'fr' ? 'Stratégie de Lancement' : 'Launch Strategy', desc: language === 'fr' ? 'Plan de Déploiement AI' : 'AI Deployment Plan' },
-                    { id: '14', title: language === 'fr' ? 'Recommandations' : 'Recommendations', desc: language === 'fr' ? 'Évolutions et Futur de la Marque' : 'Brand Evolution and Future' }
+                    { id: '01', title: language === 'fr' ? 'ADN & Manifesto' : 'DNA & Manifesto', desc: language === 'fr' ? 'Vision, Valeurs et Âme de la Marque' : 'Vision, Values and Brand Soul', page: '03-04' },
+                    { id: '02', title: language === 'fr' ? 'Identité Visuelle' : 'Visual Identity', desc: language === 'fr' ? 'Logo Master & Variations' : 'Master Logo & Variations', page: '05' },
+                    { id: '03', title: language === 'fr' ? 'Blueprint Géométrique' : 'Geometric Blueprint', desc: language === 'fr' ? 'Tracés & Proportions' : 'Traces & Proportions', page: '06' },
+                    { id: '04', title: language === 'fr' ? 'Usage du Logo' : 'Logo Usage', desc: language === 'fr' ? 'Règles d\'Intégrité et Zones de Protection' : 'Integrity Rules and Protection Zones', page: '07' },
+                    { id: '05', title: language === 'fr' ? 'Typographie' : 'Typography', desc: language === 'fr' ? 'Système de Polices et Hiérarchie' : 'Font System and Hierarchy', page: '08' },
+                    { id: '06', title: language === 'fr' ? 'Éléments Graphiques' : 'Graphic Elements', desc: language === 'fr' ? 'Motifs, Textures et Formes' : 'Patterns, Textures and Shapes', page: '09' },
+                    { id: '07', title: language === 'fr' ? 'Supports Print' : 'Print Materials', desc: language === 'fr' ? 'Papeterie et Matériel Promotionnel' : 'Stationery and Promotional Material', page: '10' },
+                    { id: '08', title: language === 'fr' ? 'Écosystème Digital' : 'Digital Ecosystem', desc: language === 'fr' ? 'Présence Web et Motion Design' : 'Web Presence and Motion Design', page: '11' },
+                    { id: '09', title: language === 'fr' ? 'Stratégie Sociale' : 'Social Strategy', desc: language === 'fr' ? 'Engagement et Présence Sociale' : 'Engagement and Social Presence', page: '12' },
+                    { id: '10', title: language === 'fr' ? 'Packaging & Matériaux' : 'Packaging & Materials', desc: language === 'fr' ? 'Expérience Produit et Finitions' : 'Product Experience and Finishes', page: '13' },
+                    { id: '11', title: language === 'fr' ? 'Mockups Contextuels' : 'Contextual Mockups', desc: language === 'fr' ? 'Projections Réelles et Immersion' : 'Real Projections and Immersion', page: '14' },
+                    { id: '12', title: language === 'fr' ? 'Nuancier Technique' : 'Technical Palette', desc: language === 'fr' ? 'Spécifications Chromatiques' : 'Chromatic Specifications', page: '15' },
+                    { id: '13', title: language === 'fr' ? 'Logique de Conception' : 'Design Logic', desc: language === 'fr' ? 'Standards et Règles de Design' : 'Design Standards and Rules', page: '16' },
+                    { id: '14', title: language === 'fr' ? 'Stratégie de Lancement' : 'Launch Strategy', desc: language === 'fr' ? 'Plan de Déploiement AI' : 'AI Deployment Plan', page: '17' },
+                    { id: '15', title: language === 'fr' ? 'Recommandations' : 'Recommendations', desc: language === 'fr' ? 'Évolutions et Futur de la Marque' : 'Brand Evolution and Future', page: '18' }
                   ].map((item, i) => (
                     <div key={i} className="flex items-center gap-8 group cursor-default">
                       <span className="text-3xl font-serif font-black text-indigo-50 group-hover:text-indigo-500 transition-colors duration-500">{item.id}</span>
@@ -412,7 +541,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                         <h3 className="text-lg font-black text-indigo-950 uppercase tracking-tight">{item.title}</h3>
                         <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">{item.desc}</p>
                       </div>
-                      <span className="text-sm font-mono text-indigo-200">P. {i + 3}</span>
+                      <span className="text-sm font-mono text-indigo-200">P. {item.page}</span>
                     </div>
                   ))}
                 </div>
@@ -442,14 +571,20 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-32">
                   <div className="space-y-16">
-                    <div className="space-y-8">
-                      <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-widest border-l-8 border-indigo-500 pl-8">Mission</h3>
+                    <div className="space-y-8 group relative">
+                      <div className="flex justify-between items-center">
+                        <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-widest border-l-8 border-indigo-500 pl-8">Mission</h3>
+                        <CopyButton text={profile?.mission || ""} id="mission" className="opacity-0 group-hover:opacity-100" />
+                      </div>
                       <p className="text-2xl text-slate-600 leading-relaxed font-serif italic">
                         "{profile?.mission || "Propulser l'innovation par un design d'excellence et une vision stratégique sans compromis."}"
                       </p>
                     </div>
-                    <div className="space-y-8">
-                      <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-widest border-l-8 border-indigo-500 pl-8">Valeurs</h3>
+                    <div className="space-y-8 group relative">
+                      <div className="flex justify-between items-center">
+                        <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-widest border-l-8 border-indigo-500 pl-8">Valeurs</h3>
+                        <CopyButton text={profile?.values || ""} id="values" className="opacity-0 group-hover:opacity-100" />
+                      </div>
                       <div className="flex flex-wrap gap-6">
                         {(profile?.values || "Excellence, Innovation, Intégrité").split(',').map((v, i) => (
                           <div key={i} className="px-8 py-4 bg-indigo-50 text-indigo-600 rounded-2xl text-sm font-black uppercase tracking-widest border border-indigo-100 shadow-sm">
@@ -460,8 +595,11 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                     </div>
                   </div>
                   <div className="space-y-16">
-                    <div className="space-y-8">
-                      <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-widest border-l-8 border-indigo-500 pl-8">Positionnement</h3>
+                    <div className="space-y-8 group relative">
+                      <div className="flex justify-between items-center">
+                        <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-widest border-l-8 border-indigo-500 pl-8">Positionnement</h3>
+                        <CopyButton text={profile?.positioning || ""} id="positioning" className="opacity-0 group-hover:opacity-100" />
+                      </div>
                       <p className="text-xl text-slate-600 leading-relaxed font-medium">
                         {profile?.positioning || "Une marque d'élite conçue pour les leaders qui exigent une identité visuelle à la hauteur de leurs ambitions mondiales."}
                       </p>
@@ -513,8 +651,11 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                   </p>
                   <div className="h-1 w-32 bg-indigo-500 mx-auto"></div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-12 text-left">
-                    <div className="space-y-4">
-                      <h4 className="text-indigo-400 font-black uppercase tracking-widest text-xs">Vision</h4>
+                    <div className="space-y-8 group relative">
+                      <div className="flex justify-between items-center">
+                        <h4 className="text-indigo-400 font-black uppercase tracking-widest text-xs">Vision</h4>
+                        <CopyButton text="Redéfinir les standards de l'industrie par une audace créative constante." id="vision-manifesto" className="opacity-0 group-hover:opacity-100" />
+                      </div>
                       <p className="text-sm text-white/60 leading-relaxed">Redéfinir les standards de l'industrie par une audace créative constante.</p>
                     </div>
                     <div className="space-y-4">
@@ -545,10 +686,10 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
               <span className="text-[12rem] font-serif text-indigo-50/80 font-black leading-none select-none">02</span>
               <div className="pb-4">
                 <h2 className="text-6xl font-black text-indigo-950 uppercase tracking-tighter">
-                  {language === 'fr' ? 'Architecture Visuelle' : 'Visual Architecture'}
+                  {language === 'fr' ? 'Le Logo' : 'The Logo'}
                 </h2>
                 <p className="text-indigo-500 font-black tracking-[0.5em] uppercase text-sm mt-4">
-                  {language === 'fr' ? 'Blueprint Maître & Tracés Géométriques' : 'Master Blueprint & Geometric Traces'}
+                  {language === 'fr' ? 'Architecture Visuelle & Blueprint' : 'Visual Architecture & Blueprint'}
                 </p>
               </div>
             </div>
@@ -593,19 +734,19 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                 <h3 className="text-xl font-black text-indigo-950 uppercase tracking-widest border-l-4 border-indigo-500 pl-6">Variations de Système</h3>
                 <div className="grid grid-cols-1 gap-10">
                    {[
-                     { img: data.logo.generatedImageUrl, name: "MASTER FULL COLOR", desc: "Digital & High Impact" },
+                     { img: data.logo.generatedImageUrl, name: language === 'fr' ? "LOGO PRINCIPAL" : "MASTER FULL COLOR", desc: language === 'fr' ? "Digital & Impact Élevé" : "Digital & High Impact" },
                      { 
                        svg: createLogoWithTextSVGFile(), 
-                       name: "LOGO WITH TEXT", 
-                       desc: "Brand Signature Variant",
+                       name: language === 'fr' ? "LOGO AVEC TEXTE" : "LOGO WITH TEXT", 
+                       desc: language === 'fr' ? "Variante de Signature" : "Brand Signature Variant",
                        isSvg: true 
                      },
-                     { img: data.logo.monochromeImageUrl, name: "SOLID MONOCHROME", desc: "Print & Professional Stationery" },
-                     { img: data.logo.invertedImageUrl, name: "NEGATIVE REVERSE", desc: "Social Media & Dark UI" },
-                     { img: data.logo.simplifiedImageUrl, name: "UI SYMBOL", desc: "Favicons & Minimal Contexts" }
+                     { img: localImages.monochrome, name: language === 'fr' ? "VERSION MONOCHROME" : "SOLID MONOCHROME", desc: language === 'fr' ? "Impression & Papeterie" : "Print & Professional Stationery", key: 'monochrome' as const, prompt: `SOLID MONOCHROME LOGO: A single-color black version of the logo for ${companyName} on a white background. High contrast, clean lines.` },
+                     { img: localImages.inverted, name: language === 'fr' ? "VERSION INVERSÉE" : "NEGATIVE REVERSE", desc: language === 'fr' ? "Réseaux Sociaux & UI Sombre" : "Social Media & Dark UI", key: 'inverted' as const, prompt: `NEGATIVE REVERSE LOGO: A white version of the logo for ${companyName} on a solid black background. High contrast, clean lines.` },
+                     { img: localImages.simplified, name: language === 'fr' ? "VERSION SIMPLIFIÉE" : "UI SYMBOL", desc: language === 'fr' ? "Favicons & Contextes Minimaux" : "Favicons & Minimal Contexts", key: 'simplified' as const, prompt: `SIMPLIFIED UI SYMBOL: A minimalist version of the ${companyName} logo, optimized for small sizes like 16x16 or 32x32 pixels.` }
                    ].map((v, i) => (
                      <div key={i} className="flex items-center gap-8 group">
-                        <div className="w-24 h-24 bg-gray-50 rounded-3xl border border-gray-100 flex items-center justify-center p-4 group-hover:bg-indigo-50 transition-colors shadow-sm overflow-hidden">
+                        <div className="w-24 h-24 bg-gray-50 rounded-3xl border border-gray-100 flex items-center justify-center p-4 group-hover:bg-indigo-50 transition-colors shadow-sm overflow-hidden relative">
                            {v.isSvg ? (
                              <img 
                                src={URL.createObjectURL(v.svg as Blob)} 
@@ -613,8 +754,16 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                                alt={v.name} 
                                onLoad={(e) => URL.revokeObjectURL((e.target as HTMLImageElement).src)}
                              />
-                           ) : (
+                           ) : v.img ? (
                              <img src={v.img as string} className="max-h-full object-contain" alt={v.name} />
+                           ) : (
+                             <div className="flex flex-col items-center gap-2">
+                               <GenerateButton 
+                                 onClick={() => handleGenerateSpecificImage(v.key!, v.prompt!)} 
+                                 isGenerating={generatingImages[v.key!]} 
+                                 label="Générer" 
+                               />
+                             </div>
                            )}
                         </div>
                         <div>
@@ -624,26 +773,116 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                      </div>
                    ))}
                 </div>
+                <div className="pt-8 space-y-4">
+                    <button 
+                      onClick={handleGenerateMockups}
+                      disabled={isGeneratingMockups}
+                      className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-lg shadow-indigo-600/20"
+                    >
+                      {isGeneratingMockups ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          {language === 'fr' ? 'Génération en cours...' : 'Generating...'}
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          {language === 'fr' ? 'Générer Mockups Contextuels' : 'Generate Contextual Mockups'}
+                        </>
+                      )}
+                    </button>
+                    
+                    <button 
+                      onClick={() => handleDownloadSVGSource('MASTER_SOURCE', data.styleGuide?.colors?.[0]?.hex || "#4f46e5")}
+                      className="w-full py-4 bg-indigo-950 hover:bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-lg shadow-indigo-950/20"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      {language === 'fr' ? 'Télécharger Source (SVG)' : 'Download Source (SVG)'}
+                    </button>
+                 </div>
              </div>
           </div>
 
-          {/* SOUS-MENU: TRACÉS GÉOMÉTRIQUES */}
+          {/* SOUS-MENU: VARIATIONS DU LOGOTYPE */}
           <div className="pt-32 space-y-16">
              <div className="flex items-center gap-8">
                 <div className="h-1 flex-grow bg-indigo-50"></div>
                 <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-tighter">
-                  {language === 'fr' ? 'Tracés Géométriques' : 'Geometric Traces'}
+                  {language === 'fr' ? 'Variations du Logo' : 'Logo Variations'}
                 </h3>
                 <div className="h-1 flex-grow bg-indigo-50"></div>
              </div>
 
+             <p className="text-lg text-slate-600 max-w-3xl mx-auto text-center font-medium leading-relaxed">
+               {language === 'fr' 
+                 ? "Pour garantir une lisibilité optimale sur tous les supports, le logotype a été décliné en plusieurs variantes adaptées à des contextes d'utilisation spécifiques."
+                 : "To ensure optimal readability across all media, the logotype has been developed in several variants adapted to specific usage contexts."}
+             </p>
+
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
                 {[
-                  { id: 'master', name: 'Master Logo', img: data.logo.generatedImageUrl, color: data.styleGuide.colors[0].hex, suffix: 'MASTER' },
-                  { id: 'simplified', name: language === 'fr' ? 'Version Simplifiée' : 'Simplified Version', img: data.logo.simplifiedImageUrl, color: data.styleGuide.colors[0].hex, suffix: 'SIMPLIFIED' },
-                  { id: 'monochrome', name: 'Monochrome', img: data.logo.monochromeImageUrl, color: '#000000', suffix: 'MONOCHROME' },
-                  { id: 'inverted', name: language === 'fr' ? 'Inversé' : 'Inverted', img: data.logo.invertedImageUrl, color: '#FFFFFF', suffix: 'INVERTED', dark: true },
-                  { id: 'dark', name: language === 'fr' ? 'Fond Sombre' : 'Dark Background', img: data.logo.darkBgImageUrl, color: data.styleGuide.colors[0].hex, suffix: 'DARK_BG', dark: true }
+                  { 
+                    id: 'master', 
+                    name: language === 'fr' ? 'Logo Principal' : 'Master Logo', 
+                    img: data.logo.generatedImageUrl, 
+                    color: data.styleGuide?.colors?.[0]?.hex || "#4f46e5", 
+                    suffix: 'MASTER', 
+                    usage: data.logo.variations.color || (language === 'fr' ? "Utilisation principale sur fonds clairs pour un impact maximal." : "Primary use on light backgrounds for maximum impact.")
+                  },
+                  { 
+                    id: 'simplified', 
+                    name: language === 'fr' ? 'Version Simplifiée' : 'Simplified Version', 
+                    img: localImages.simplified, 
+                    color: data.styleGuide?.colors?.[0]?.hex || "#4f46e5", 
+                    suffix: 'SIMPLIFIED', 
+                    key: 'simplified' as const, 
+                    prompt: `SIMPLIFIED UI SYMBOL: A minimalist version of the ${companyName} logo, optimized for small sizes.`, 
+                    usage: data.logo.variations.simplified || (language === 'fr' ? "Version épurée pour les petits formats (UI, icônes) où la lisibilité est critique." : "Simplified version for small formats (UI, icons) where legibility is critical.")
+                  },
+                  { 
+                    id: 'monochrome', 
+                    name: language === 'fr' ? 'Version Monochrome' : 'Monochrome Version', 
+                    img: localImages.monochrome, 
+                    color: '#000000', 
+                    suffix: 'MONOCHROME', 
+                    key: 'monochrome' as const, 
+                    prompt: `SOLID MONOCHROME LOGO: A single-color black version of the logo for ${companyName} on a white background.`, 
+                    usage: data.logo.variations.black || (language === 'fr' ? "Version noir et blanc pour l'impression économique ou les documents officiels." : "Black and white version for economical printing or official documents.")
+                  },
+                  { 
+                    id: 'inverted', 
+                    name: language === 'fr' ? 'Version Inversée' : 'Inverted Version', 
+                    img: localImages.inverted, 
+                    color: '#FFFFFF', 
+                    suffix: 'INVERTED', 
+                    dark: true, 
+                    key: 'inverted' as const, 
+                    prompt: `NEGATIVE REVERSE LOGO: A white version of the logo for ${companyName} on a solid black background.`, 
+                    usage: data.logo.variations.white || (language === 'fr' ? "Version négative pour une visibilité parfaite sur fonds sombres ou colorés." : "Negative version for perfect visibility on dark or colored backgrounds.")
+                  },
+                  { 
+                    id: 'dark', 
+                    name: language === 'fr' ? 'Fond Sombre' : 'Dark Background', 
+                    img: localImages.darkBg, 
+                    color: data.styleGuide?.colors?.[0]?.hex || "#4f46e5", 
+                    suffix: 'DARK_BG', 
+                    dark: true, 
+                    key: 'darkBg' as const, 
+                    prompt: `DARK BACKGROUND LOGO: The ${companyName} logo professionally placed on a dark, premium background with appropriate contrast.`, 
+                    usage: data.logo.variations.backgrounds || (language === 'fr' ? "Adaptation spécifique pour les environnements à faible luminosité ou premium." : "Specific adaptation for low-light or premium environments.")
+                  },
+                  { 
+                    id: 'favicon', 
+                    name: language === 'fr' ? 'Version Favicon' : 'Favicon Version', 
+                    img: data.logo.faviconImageUrl, 
+                    color: data.styleGuide?.colors?.[0]?.hex || "#4f46e5", 
+                    suffix: 'FAVICON', 
+                    usage: data.logo.variations.favicon || (language === 'fr' ? "Icône de navigation pour les navigateurs web et applications mobiles." : "Navigation icon for web browsers and mobile applications.")
+                  }
                 ].map((v, i) => (
                   <div key={i} className="bg-slate-50 rounded-[3rem] p-8 border border-slate-100 space-y-6 group/item">
                      <div className="flex justify-between items-start">
@@ -651,19 +890,43 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                            <h4 className="text-sm font-black text-indigo-950 uppercase tracking-widest">{v.name}</h4>
                            <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest">Variation {i+1}</p>
                         </div>
-                        <button 
-                          onClick={() => handleDownloadSVGSource(v.suffix + '_GEOMETRIC', v.color, true)}
-                          className="p-3 bg-white rounded-full shadow-md hover:scale-110 transition-all text-indigo-600"
-                          title="Download Geometric SVG"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                        </button>
+                        <div className="flex gap-2">
+                          {v.img && (
+                            <>
+                              <button 
+                                onClick={() => handleDownloadSVGSource(v.suffix, v.color)}
+                                className="p-3 bg-white rounded-full shadow-md hover:scale-110 transition-all text-indigo-600"
+                                title="Download SVG"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                              </button>
+                              <button 
+                                onClick={() => handleDownloadSVGSource(v.suffix + '_GEOMETRIC', v.color, true)}
+                                className="p-3 bg-white rounded-full shadow-md hover:scale-110 transition-all text-indigo-400"
+                                title="Download Geometric SVG"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A2 2 0 013 15.483V4.517a2 2 0 011.553-1.943L9 2l6 3 5.447-2.724A2 2 0 0121 4.517v10.966a2 2 0 01-1.553 1.943L15 20l-6-3z" /></svg>
+                              </button>
+                            </>
+                          )}
+                          {!v.img && v.key && (
+                            <GenerateButton 
+                              onClick={() => handleGenerateSpecificImage(v.key!, v.prompt!)} 
+                              isGenerating={generatingImages[v.key!]} 
+                              label="Générer" 
+                            />
+                          )}
+                        </div>
                      </div>
 
                      <div className="grid grid-cols-2 gap-4">
                         {/* Image Preview */}
                         <div className={`aspect-square rounded-2xl overflow-hidden border border-white shadow-sm flex items-center justify-center p-4 ${v.dark ? 'bg-[#0b1120]' : 'bg-white'}`}>
-                           <img src={v.img} className="max-h-full object-contain" alt={v.name} />
+                           {v.img ? (
+                             <img src={v.img} className="max-h-full object-contain" alt={v.name} />
+                           ) : (
+                             <div className="text-indigo-200/30 font-black uppercase text-[8px] text-center">En attente</div>
+                           )}
                         </div>
                         
                         {/* Geometric Trace Preview */}
@@ -718,6 +981,11 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                            <span>Nodes</span>
                            <span className="text-indigo-600">Stable</span>
                         </div>
+                        <div className="pt-2 border-t border-indigo-50">
+                           <p className="text-[8px] font-medium text-slate-500 leading-relaxed italic">
+                              {v.usage}
+                           </p>
+                        </div>
                      </div>
                   </div>
                 ))}
@@ -748,10 +1016,22 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                   <div className="space-y-6">
                      <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-tight">Zone d'Exclusion</h3>
                      <p className="text-slate-600 leading-relaxed font-medium">Une zone de protection égale à 25% de la hauteur du logo doit être respectée tout autour du symbole. Aucun élément graphique ou textuel ne doit pénétrer cet espace.</p>
-                     <div className="bg-white p-12 rounded-[3rem] border-2 border-dashed border-indigo-200 flex items-center justify-center relative">
+                     <div className="bg-white p-12 rounded-[3rem] border-2 border-dashed border-indigo-200 flex items-center justify-center relative group overflow-hidden">
+                        <div className="absolute inset-0 bg-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         <div className="absolute inset-6 border border-indigo-400/20 bg-indigo-500/5 rounded-2xl"></div>
-                        <img src={data.logo.generatedImageUrl} className="w-32 h-32 relative z-10" />
-                        <span className="absolute top-0 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[8px] px-3 py-1 rounded-full uppercase font-black tracking-widest">Zone X</span>
+                        {data.logo.generatedImageUrl && (
+                           <img src={data.logo.generatedImageUrl} className="w-32 h-32 relative z-10" />
+                        )}
+                        
+                        {/* Clear Space Visualization */}
+                        <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
+                          <div className="absolute top-0 left-0 w-full h-6 bg-red-500/10 flex items-center justify-center"><span className="text-[8px] text-red-500 font-black">X</span></div>
+                          <div className="absolute bottom-0 left-0 w-full h-6 bg-red-500/10 flex items-center justify-center"><span className="text-[8px] text-red-500 font-black">X</span></div>
+                          <div className="absolute top-0 left-0 w-6 h-full bg-red-500/10 flex items-center justify-center"><span className="text-[8px] text-red-500 font-black">X</span></div>
+                          <div className="absolute top-0 right-0 w-6 h-full bg-red-500/10 flex items-center justify-center"><span className="text-[8px] text-red-500 font-black">X</span></div>
+                        </div>
+
+                        <span className="absolute top-0 left-1/2 -translate-x-1/2 bg-red-600 text-white text-[8px] px-3 py-1 rounded-full uppercase font-black tracking-widest z-20">Zone X Security</span>
                      </div>
                   </div>
                   <div className="space-y-6">
@@ -858,11 +1138,15 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                      <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-tight">Motif de Marque (Pattern)</h3>
                      <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide.graphicElements.patternConcept}</p>
                      <div className="aspect-video rounded-[3rem] overflow-hidden border-8 border-gray-50 shadow-2xl relative">
-                        {data.styleGuide.graphicElements.patternImageUrl ? (
-                          <img src={data.styleGuide.graphicElements.patternImageUrl} className="w-full h-full object-cover" alt="Brand Pattern" />
+                        {localImages.pattern ? (
+                          <img src={localImages.pattern} className="w-full h-full object-cover" alt="Brand Pattern" />
                         ) : (
                           <div className="w-full h-full bg-indigo-50 flex items-center justify-center">
-                             <p className="text-indigo-300 font-black uppercase tracking-widest">Pattern en attente</p>
+                             <GenerateButton 
+                               onClick={() => handleGenerateSpecificImage('pattern', `BRAND PATTERN DESIGN: A professional, high-end repeating pattern for the brand ${companyName}. Based on the concept: ${data.styleGuide.graphicElements.patternConcept}. Clean, elegant, and modern.`)} 
+                               isGenerating={generatingImages.pattern} 
+                               label="Générer le Motif" 
+                             />
                           </div>
                         )}
                      </div>
@@ -907,8 +1191,16 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
 
                 <div className="space-y-24">
                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-                      <div className="rounded-[4rem] overflow-hidden shadow-3xl border-8 border-gray-50 bg-gray-100">
-                         <img src={data.styleGuide.ecosystem.print.businessCardImageUrl} className="w-full h-full object-cover" alt="Carte de Visite" />
+                      <div className="rounded-[4rem] overflow-hidden shadow-3xl border-8 border-gray-50 bg-gray-100 flex items-center justify-center min-h-[300px]">
+                         {localImages.businessCard ? (
+                           <img src={localImages.businessCard} className="w-full h-full object-cover" alt="Carte de Visite" />
+                         ) : (
+                           <GenerateButton 
+                             onClick={() => handleGenerateSpecificImage('businessCard', `BUSINESS CARD MOCKUP: A professional business card design for ${companyName}. Premium feel, clean typography, showing the logo clearly.`)} 
+                             isGenerating={generatingImages.businessCard} 
+                             label="Générer Carte de Visite" 
+                           />
+                         )}
                       </div>
                       <div className="space-y-8">
                          <h4 className="text-4xl font-black text-indigo-950 uppercase tracking-tighter">Carte de Visite Master</h4>
@@ -925,8 +1217,16 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                             {data.styleGuide.ecosystem.print.flyerLayout}
                          </p>
                       </div>
-                      <div className="rounded-[4rem] overflow-hidden shadow-3xl border-8 border-gray-50 bg-gray-100 order-1 lg:order-2 aspect-[1/1.4]">
-                         <img src={data.styleGuide.ecosystem.print.flyerImageUrl} className="w-full h-full object-cover" alt="Flyer A4" />
+                      <div className="rounded-[4rem] overflow-hidden shadow-3xl border-8 border-gray-50 bg-gray-100 order-1 lg:order-2 aspect-[1/1.4] flex items-center justify-center min-h-[400px]">
+                         {localImages.flyer ? (
+                           <img src={localImages.flyer} className="w-full h-full object-cover" alt="Flyer A4" />
+                         ) : (
+                           <GenerateButton 
+                             onClick={() => handleGenerateSpecificImage('flyer', `PROMOTIONAL FLYER MOCKUP: A high-end A4 flyer design for ${companyName}. Modern layout, impactful visuals, and clear brand identity.`)} 
+                             isGenerating={generatingImages.flyer} 
+                             label="Générer Flyer" 
+                           />
+                         )}
                       </div>
                    </div>
                 </div>
@@ -957,21 +1257,44 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                       {data.styleGuide.extraMockups?.slice(0, 4).map((m, i) => (
                         <div key={i} className="rounded-[4rem] overflow-hidden shadow-2xl aspect-[4/3] border-8 border-gray-50 group">
-                          <img src={m} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" alt={`Mockup ${i+1}`} />
+                           {m && (
+                             <img src={m} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" alt={`Mockup ${i+1}`} />
+                           )}
                         </div>
                       ))}
                    </div>
 
                    {/* DIGITAL MOTION SECTION */}
-                   {(data.logo.animatedVariations || data.styleGuide.ecosystem.promoVideoUrl) && (
+                   {(generatedVideoUrl || data.styleGuide.ecosystem.promoVideoUrl || (isAdmin && hasApiKey)) && (
                      <div className="space-y-12 pt-12 border-t border-gray-100">
-                        <h3 className="text-4xl font-black text-indigo-950 uppercase tracking-tighter">Digital Motion Assets</h3>
+                        <div className="flex justify-between items-center">
+                           <h3 className="text-4xl font-black text-indigo-950 uppercase tracking-tighter">Digital Motion Assets</h3>
+                           {isAdmin && hasApiKey && !generatedVideoUrl && (
+                              <button 
+                                onClick={handleGenerateVideo}
+                                disabled={isGeneratingVideo}
+                                className="px-6 py-3 bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-indigo-700 transition-all disabled:opacity-50 flex items-center gap-2"
+                              >
+                                {isGeneratingVideo ? (
+                                   <>
+                                      <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                      Génération...
+                                   </>
+                                ) : (
+                                   <>
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                      Générer l'Animation
+                                   </>
+                                )}
+                              </button>
+                           )}
+                        </div>
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                           {data.logo.animatedVariations?.primaryUrl && (
+                           {generatedVideoUrl && (
                              <div className="space-y-4">
                                 <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Logo Animation Master</p>
                                 <div className="rounded-[3rem] overflow-hidden shadow-2xl bg-black aspect-video border-8 border-gray-50">
-                                   <video src={data.logo.animatedVariations.primaryUrl} autoPlay loop muted playsInline className="w-full h-full object-cover" />
+                                   <video src={generatedVideoUrl} autoPlay loop muted playsInline className="w-full h-full object-cover" />
                                 </div>
                              </div>
                            )}
@@ -986,6 +1309,46 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                         </div>
                      </div>
                    )}
+
+                   {/* ÉCOSYSTÈME VISUEL SUBSECTION */}
+                   <div className="space-y-12 pt-12 border-t border-gray-100">
+                      <h3 className="text-4xl font-black text-indigo-950 uppercase tracking-tighter">Écosystème Visuel</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                         <div className="bg-slate-50 rounded-[2rem] p-8 space-y-4 hover:bg-indigo-50 transition-colors">
+                            <div className="flex items-center gap-4">
+                               <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg>
+                               </div>
+                               <h4 className="text-lg font-black text-indigo-950 uppercase tracking-tight">Interface Web</h4>
+                            </div>
+                            <p className="text-[10px] text-slate-600 font-medium leading-relaxed">
+                               {data.styleGuide.ecosystem.digital.webInterface}
+                            </p>
+                         </div>
+                         <div className="bg-slate-50 rounded-[2rem] p-8 space-y-4 hover:bg-indigo-50 transition-colors">
+                            <div className="flex items-center gap-4">
+                               <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                               </div>
+                               <h4 className="text-lg font-black text-indigo-950 uppercase tracking-tight">App Mobile</h4>
+                            </div>
+                            <p className="text-[10px] text-slate-600 font-medium leading-relaxed">
+                               {data.styleGuide.ecosystem.digital.appDesign}
+                            </p>
+                         </div>
+                         <div className="bg-slate-50 rounded-[2rem] p-8 space-y-4 hover:bg-indigo-50 transition-colors">
+                            <div className="flex items-center gap-4">
+                               <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" /></svg>
+                               </div>
+                               <h4 className="text-lg font-black text-indigo-950 uppercase tracking-tight">Réseaux Sociaux</h4>
+                            </div>
+                            <p className="text-[10px] text-slate-600 font-medium leading-relaxed">
+                               {data.styleGuide.ecosystem.socialMedia.postTemplate}
+                            </p>
+                         </div>
+                      </div>
+                   </div>
 
                    {/* AI LAUNCH POST SECTION */}
                    <div className="space-y-12 pt-12 border-t border-gray-100">
@@ -1007,7 +1370,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                              className="absolute top-8 right-8 p-4 bg-white rounded-2xl shadow-lg hover:scale-110 transition-all text-indigo-600"
                              title="Copier le texte"
                            >
-                             {copySuccess ? (
+                             {copySuccess === 'post' ? (
                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
                              ) : (
                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
@@ -1050,20 +1413,30 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-24">
                    <div className="space-y-12">
-                      <div className="space-y-6">
-                         <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-tight">Style d'Avatar</h3>
+                      <div className="space-y-6 group relative">
+                         <div className="flex justify-between items-center">
+                            <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-tight">Style d'Avatar</h3>
+                            <CopyButton text={data.styleGuide.ecosystem.socialMedia.avatarStyle} id="avatar-style" className="opacity-0 group-hover:opacity-100" />
+                         </div>
                          <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide.ecosystem.socialMedia.avatarStyle}</p>
                          <div className="flex gap-8">
                             <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-indigo-50 shadow-xl">
-                               <img src={data.logo.faviconImageUrl} className="w-full h-full object-contain p-4 bg-white" alt="Social Avatar" />
+                                {data.logo.faviconImageUrl && (
+                                 <img src={data.logo.faviconImageUrl} className="w-full h-full object-contain p-4 bg-white" alt="Social Avatar" />
+                               )}
                             </div>
                             <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-indigo-900 shadow-xl bg-indigo-950 flex items-center justify-center p-4">
-                               <img src={data.logo.invertedImageUrl} className="w-full h-full object-contain" alt="Social Avatar Inverted" />
+                                {data.logo.invertedImageUrl && (
+                                 <img src={data.logo.invertedImageUrl} className="w-full h-full object-contain" alt="Social Avatar Inverted" />
+                               )}
                             </div>
                          </div>
                       </div>
-                      <div className="space-y-6">
-                         <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-tight">Concept de Bannière</h3>
+                      <div className="space-y-6 group relative">
+                         <div className="flex justify-between items-center">
+                            <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-tight">Concept de Bannière</h3>
+                            <CopyButton text={data.styleGuide.ecosystem.socialMedia.bannerConcept} id="banner-concept" className="opacity-0 group-hover:opacity-100" />
+                         </div>
                          <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide.ecosystem.socialMedia.bannerConcept}</p>
                          <div className="h-32 bg-indigo-900 rounded-3xl border border-indigo-800 flex items-center justify-center overflow-hidden relative">
                             <div className="absolute inset-0 opacity-20" style={{ backgroundImage: `url(${data.styleGuide.graphicElements.patternImageUrl})`, backgroundSize: 'cover' }}></div>
@@ -1072,8 +1445,11 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                       </div>
                    </div>
                    <div className="space-y-12">
-                      <div className="space-y-6">
-                         <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-tight">Template de Post</h3>
+                      <div className="space-y-6 group relative">
+                         <div className="flex justify-between items-center">
+                            <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-tight">Template de Post</h3>
+                            <CopyButton text={data.styleGuide.ecosystem.socialMedia.postTemplate} id="post-template" className="opacity-0 group-hover:opacity-100" />
+                         </div>
                          <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide.ecosystem.socialMedia.postTemplate}</p>
                          <div className="aspect-square bg-slate-50 rounded-[3rem] border-4 border-dashed border-slate-200 p-8 flex flex-col justify-between">
                             <div className="flex items-center gap-4">
@@ -1084,7 +1460,9 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                                </div>
                             </div>
                             <div className="flex-grow flex items-center justify-center">
-                               <img src={data.logo.generatedImageUrl} className="w-24 opacity-20" />
+                                {data.logo.generatedImageUrl && (
+                                 <img src={data.logo.generatedImageUrl} className="w-24 opacity-20" />
+                               )}
                             </div>
                             <div className="space-y-2">
                                <div className="w-full h-2 bg-slate-200 rounded"></div>
@@ -1142,7 +1520,9 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                          <div className="h-64 bg-slate-50 rounded-[3rem] border-4 border-dashed border-slate-200 flex items-center justify-center p-12">
                             <div className="w-full max-w-xs bg-white p-8 rounded-xl shadow-xl border border-slate-100 space-y-4">
                                <div className="flex justify-between items-center">
-                                  <img src={data.logo.faviconImageUrl} className="w-8" />
+                                  {data.logo.faviconImageUrl && (
+                                     <img src={data.logo.faviconImageUrl} className="w-8" />
+                                  )}
                                   <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">Premium Batch</span>
                                </div>
                                <div className="h-0.5 bg-slate-100 w-full"></div>
@@ -1183,12 +1563,16 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                 {contextualMockups.length > 0 ? (
                   <div className="grid grid-cols-2 gap-8">
                     <div className="col-span-2 h-[400px] rounded-[3rem] overflow-hidden shadow-2xl border-4 border-gray-50">
-                      <img src={contextualMockups[0]} className="w-full h-full object-cover" alt="Website Header" />
+                      {contextualMockups[0] && (
+                        <img src={contextualMockups[0]} className="w-full h-full object-cover" alt="Website Header" />
+                      )}
                     </div>
                     <div className="grid grid-cols-2 gap-8 col-span-2">
                        {contextualMockups.slice(1, 5).map((m, i) => (
                          <div key={i} className="h-[250px] rounded-[2.5rem] overflow-hidden shadow-xl border-4 border-gray-50">
-                           <img src={m} className="w-full h-full object-cover" alt={`Mockup ${i+2}`} />
+                           {m && (
+                             <img src={m} className="w-full h-full object-cover" alt={`Mockup ${i+2}`} />
+                           )}
                          </div>
                        ))}
                     </div>
@@ -1240,7 +1624,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12">
-                     {data.styleGuide.colors.map((c, i) => (
+                     {(data.styleGuide?.colors || []).map((c, i) => (
                        <div key={i} className="space-y-6">
                           <div className="h-48 w-full rounded-[3rem] shadow-xl" style={{ backgroundColor: c.hex }}></div>
                           <div className="space-y-2">
@@ -1497,9 +1881,12 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                       <h3 className="text-3xl font-black text-white uppercase tracking-tight border-l-8 border-indigo-500 pl-8">Vision à Long Terme</h3>
                       <div className="space-y-8">
                          {data.analysis.futureRecommendations.map((rec, i) => (
-                           <div key={i} className="flex gap-8 group">
+                           <div key={i} className="flex gap-8 group relative">
                               <span className="text-4xl font-serif font-black text-indigo-500/30 group-hover:text-indigo-500 transition-colors">0{i+1}</span>
-                              <p className="text-xl text-white/70 leading-relaxed font-medium">{rec}</p>
+                              <div className="flex-grow flex justify-between items-start gap-4">
+                                <p className="text-xl text-white/70 leading-relaxed font-medium">{rec}</p>
+                                <CopyButton text={rec} id={`future-rec-${i}`} className="opacity-0 group-hover:opacity-100 bg-white/10 hover:bg-white/20 text-white" />
+                              </div>
                            </div>
                          ))}
                       </div>
@@ -1507,7 +1894,9 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                    <div className="flex items-center justify-center">
                       <div className="w-80 h-80 bg-white/5 rounded-[5rem] border border-white/10 flex items-center justify-center p-16 backdrop-blur-3xl relative">
                          <div className="absolute inset-0 bg-indigo-500/20 blur-[100px] rounded-full"></div>
-                         <img src={data.logo.faviconImageUrl} className="w-full h-full object-contain relative z-10 opacity-50 grayscale" alt="Future Vision" />
+                         {data.logo.faviconImageUrl && (
+                           <img src={data.logo.faviconImageUrl} className="w-full h-full object-contain relative z-10 opacity-50 grayscale" alt="Future Vision" />
+                        )}
                       </div>
                    </div>
                 </div>
@@ -1533,7 +1922,9 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
               
               <div className="text-center space-y-16 relative z-10">
                 <div className="w-48 h-48 bg-white rounded-[3rem] flex items-center justify-center mx-auto shadow-2xl p-10 mb-12">
-                   <img src={data.logo.faviconImageUrl} className="w-full h-full object-contain" alt="Final Symbol" />
+                   {data.logo.faviconImageUrl && (
+                    <img src={data.logo.faviconImageUrl} className="w-full h-full object-contain" alt="Final Symbol" />
+                 )}
                 </div>
                 <h2 className="text-8xl font-black tracking-tighter uppercase leading-none">Merci.</h2>
                 <p className="text-2xl text-indigo-400 font-light tracking-[0.5em] uppercase opacity-60">Identity System Complete</p>

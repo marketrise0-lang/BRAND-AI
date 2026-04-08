@@ -76,7 +76,7 @@ const AdvancedLab: React.FC = () => {
               <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Image Source</label>
               <div className="relative group cursor-pointer h-48 bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl flex items-center justify-center overflow-hidden hover:border-indigo-400 transition-colors">
                 {imageFile ? (
-                  <img src={imageFile} className="w-full h-full object-cover" />
+                  <img src={imageFile || undefined} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                 ) : (
                   <div className="text-center">
                     <p className="text-slate-400 font-bold">Cliquez pour uploader</p>
@@ -141,9 +141,9 @@ const AdvancedLab: React.FC = () => {
             </div>
           ) : output ? (
             isVideo ? (
-              <video src={output} controls className="w-full h-full object-contain rounded-2xl shadow-2xl" autoPlay loop />
+              <video src={output || undefined} controls className="w-full h-full object-contain rounded-2xl shadow-2xl" autoPlay loop />
             ) : (
-              <img src={output} className="w-full h-full object-contain rounded-2xl shadow-2xl" />
+              <img src={output || undefined} referrerPolicy="no-referrer" className="w-full h-full object-contain rounded-2xl shadow-2xl" />
             )
           ) : (
             <div className="text-center text-slate-300">

@@ -54,7 +54,7 @@ const LogoBrandingForm: React.FC<LogoBrandingFormProps> = ({ onSubmit, isLoading
           <label className={labelClasses}>Image du Logo</label>
           <div className="relative group cursor-pointer h-64 bg-slate-50 border-4 border-dashed border-slate-200 rounded-[2rem] flex items-center justify-center overflow-hidden hover:border-indigo-400 transition-colors">
             {logoPreview ? (
-              <img src={logoPreview} className="max-w-full max-h-full object-contain p-4" alt="Preview" />
+              <img src={logoPreview || undefined} referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain p-4" alt="Preview" />
             ) : (
               <div className="text-center p-8">
                 <svg className="w-16 h-16 mx-auto mb-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">

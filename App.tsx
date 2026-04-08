@@ -27,7 +27,8 @@ import {
   recordDownload,
   updateProject,
   createUserProfile,
-  subscribeToUserSubscription
+  subscribeToUserSubscription,
+  deleteAllUserProjects
 } from './src/services/firestoreService';
 import { createAdminProfile } from './src/services/adminService';
 import { uploadBase64Image, processBrandingImages } from './src/services/storageService';
@@ -279,6 +280,24 @@ const Dashboard: React.FC = () => {
     return true;
   };
 
+  const handleClearAllGenerations = async () => {
+    if (!user) return;
+    if (window.confirm("Êtes-vous sûr de vouloir supprimer TOUTES vos générations ? Cette action est irréversible.")) {
+      try {
+        setIsLoading(true);
+        setLoadingStep("Suppression de toutes les données de génération...");
+        await deleteAllUserProjects(user.uid);
+        setResult(null);
+        setBrandProfile(null);
+      } catch (err) {
+        handleApiError(err);
+      } finally {
+        setIsLoading(false);
+        setLoadingStep("");
+      }
+    }
+  };
+
   const handleLogoSubmit = async (companyName: string, logoFile: string) => {
     if (!checkUsageLimit()) return;
     setIsLoading(true);
@@ -354,8 +373,8 @@ const Dashboard: React.FC = () => {
       const brandingData = await generateBranding(profileData, isAdmin && hasApiKey);
       
       setLoadingStep("Ingénierie du logotype maître...");
-      const colorString = brandingData.styleGuide.colors.map(c => c.hex).join(', ');
-      const logoPrompt = `High-end professional minimal vector logo for "${profileData.companyName}". Colors: ${colorString}. Symbol: ${brandingData.logo.description}. Pure white background.`;
+      const colorString = brandingData.styleGuide?.colors?.map(c => c.hex).join(', ') || "#4f46e5";
+      const logoPrompt = `Professional, solid and high-end minimal vector logo for "${profileData.companyName}". Colors: ${colorString}. Symbol: ${brandingData.logo.description}. Pure white background.`;
       
       // 1. Generate the master logo (Base64)
       const masterLogoBase64 = await smartGenerateImage(logoPrompt);
@@ -404,8 +423,8 @@ const Dashboard: React.FC = () => {
   };
 
   const processBrandingVisuals = async (brandingData: BrandingType, companyName: string, logoUrl: string, signal?: AbortSignal, projectId?: string) => {
-    const primaryColor = brandingData.styleGuide.colors[0].hex;
-    const secondaryColor = brandingData.styleGuide.colors[1]?.hex || primaryColor;
+    const primaryColor = brandingData.styleGuide?.colors?.[0]?.hex || "#4f46e5";
+    const secondaryColor = brandingData.styleGuide?.colors?.[1]?.hex || primaryColor;
 
     if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
 
@@ -418,77 +437,56 @@ const Dashboard: React.FC = () => {
     try {
       // PROMPTS PREPARATION
       const variationsPrompts = [
-        `Minimalist icon-only version of the logo. Flat design. White background.`,
-        `Pure black silhouette of the logo on white background. No colors.`,
+        `Professional icon-only version of the logo. Flat design. White background.`,
+        `Pure black silhouette of the logo on white background. Solid and clean.`,
         `Logo variation: the logo is entirely white, placed on a solid background of color ${primaryColor}.`,
-        `Logo on a deep charcoal black background. Modern high-end aesthetic.`,
+        `Logo on a deep charcoal black background. Modern professional aesthetic.`,
         `Small square favicon version of the central symbol. High legibility.`
       ];
 
-      const businessCardPrompt = `PRESTIGE MOCKUP: Luxury business card design for ${companyName}. Front and back view. Minimalist, using ${primaryColor} and ${secondaryColor}. Elegant typography.`;
-      const flyerPrompt = `PRESTIGE MOCKUP: High-end professional A4 flyer for ${companyName}. Modern layout, clean sections, displaying the logo and brand pattern.`;
+      const businessCardPrompt = `PROFESSIONAL MOCKUP: Luxury business card design for ${companyName}. Front and back view. Minimalist, using ${primaryColor} and ${secondaryColor}. Elegant typography.`;
+      const flyerPrompt = `PROFESSIONAL MOCKUP: High-end professional A4 flyer for ${companyName}. Modern layout, clean sections, displaying the logo and brand pattern.`;
 
       const mockupPool = [
-        `MOCKUP: Luxury website header on a Macbook Pro, logo "${companyName}" visible in nav. High-end UI.`,
-        `MOCKUP: Modern smartphone showing a brand app icon and splash screen for ${companyName}.`,
-        `MOCKUP: High-end shipping box with large logo print of ${companyName}.`,
-        `MOCKUP: Interior office wall with 3D logo sign of ${companyName} and modern furniture.`,
-        `MOCKUP: Premium Hoodie with a small discrete logo embroidery of ${companyName} on the chest.`,
-        `MOCKUP: Professional T-shirt with a bold graphic print of the ${companyName} logo.`,
-        `MOCKUP: Large outdoor street banner showcasing the ${companyName} brand identity.`,
-        `MOCKUP: Minimalist tote bag with the ${companyName} logo.`,
-        `MOCKUP: Luxury vehicle wrap with the ${companyName} branding.`,
-        `MOCKUP: High-end stationery set with letterhead and envelopes for ${companyName}.`
+        `MOCKUP: Professional website header on a Macbook Pro with the logo of ${companyName} in a clean navigation bar.`,
+        `MOCKUP: Social media profile mockup for ${companyName} showing the logo on a smartphone screen.`,
+        `MOCKUP: Premium business card mockup for ${companyName} on a textured paper background.`,
+        `MOCKUP: Luxury product packaging mockup for ${companyName} with the logo embossed on a high-quality box.`,
+        `MOCKUP: Modern shop sign mockup for ${companyName} on a sleek storefront in a premium urban location.`
       ];
       const shuffledMockups = [...mockupPool].sort(() => 0.5 - Math.random()).slice(0, 5);
 
-      const colorString = brandingData.styleGuide.colors.map(c => c.hex).join(', ');
+      const colorString = (brandingData.styleGuide?.colors || []).map(c => c.hex).join(', ');
       const patternPrompt = `Seamless high-end brand pattern. Concept: ${brandingData.styleGuide.graphicElements.patternConcept}. Colors: ${colorString}.`;
       const mainMockupPrompt = `MASTER PRESTIGE MOCKUP: Complete stationery set for ${companyName} with envelopes and letterheads.`;
 
-      // MASSIVE PARALLEL GENERATION (14 images at once)
-      const [
-        v1, v2, v3, v4, v5,
-        bcUrl, flyerUrl,
-        m1, m2, m3, m4, m5,
-        patternUrl, mainMockupUrl
-      ] = await Promise.all([
-        // Variations
-        smartGenerateImage(variationsPrompts[0], logoUrl),
-        smartGenerateImage(variationsPrompts[1], logoUrl),
-        smartGenerateImage(variationsPrompts[2], logoUrl),
-        smartGenerateImage(variationsPrompts[3], logoUrl),
-        smartGenerateImage(variationsPrompts[4], logoUrl),
-        // Print
-        smartGenerateImage(businessCardPrompt, logoUrl),
-        smartGenerateImage(flyerPrompt, logoUrl),
-        // Mockups
-        smartGenerateImage(shuffledMockups[0], logoUrl),
-        smartGenerateImage(shuffledMockups[1], logoUrl),
-        smartGenerateImage(shuffledMockups[2], logoUrl),
-        smartGenerateImage(shuffledMockups[3], logoUrl),
-        smartGenerateImage(shuffledMockups[4], logoUrl),
-        // Final
-        smartGenerateImage(patternPrompt, logoUrl),
-        smartGenerateImage(mainMockupPrompt, logoUrl)
-      ]);
-
+      // BATCHED SEQUENTIAL GENERATION (to avoid hitting quota limits simultaneously)
+      const faviconUrl = await smartGenerateImage(variationsPrompts[4], logoUrl);
+      setLoadingStep("Génération du système d'identité monochrome...");
+      const monochromeUrl = await smartGenerateImage(variationsPrompts[1], logoUrl);
+      setLoadingStep("Création du motif de marque exclusif...");
+      const patternUrl = await smartGenerateImage(patternPrompt, logoUrl);
+      setLoadingStep("Mise en situation de la marque (Mockup Maître)...");
+      const mainMockupUrl = await smartGenerateImage(mainMockupPrompt, logoUrl);
+      setLoadingStep("Conception des supports imprimés (Cartes & Flyers)...");
+      const businessCardUrl = await smartGenerateImage(businessCardPrompt, logoUrl);
+      const flyerUrl = await smartGenerateImage(flyerPrompt, logoUrl);
+      
       if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
 
       // ASSIGN RESULTS
-      brandingData.logo.simplifiedImageUrl = v1;
-      brandingData.logo.monochromeImageUrl = v2;
-      brandingData.logo.invertedImageUrl = v3;
-      brandingData.logo.darkBgImageUrl = v4;
-      brandingData.logo.faviconImageUrl = v5;
+      brandingData.logo.faviconImageUrl = faviconUrl || logoUrl;
+      brandingData.logo.monochromeImageUrl = monochromeUrl || null;
+      brandingData.styleGuide.graphicElements.patternImageUrl = patternUrl || null;
+      brandingData.styleGuide.mockupImageUrl = mainMockupUrl || null;
+      brandingData.styleGuide.ecosystem.print.businessCardImageUrl = businessCardUrl || null;
+      brandingData.styleGuide.ecosystem.print.flyerImageUrl = flyerUrl || null;
 
-      brandingData.styleGuide.ecosystem.print.businessCardImageUrl = bcUrl;
-      brandingData.styleGuide.ecosystem.print.flyerImageUrl = flyerUrl;
-
-      brandingData.styleGuide.extraMockups = [m1, m2, m3, m4, m5];
-
-      brandingData.styleGuide.graphicElements.patternImageUrl = patternUrl;
-      brandingData.styleGuide.mockupImageUrl = mainMockupUrl;
+      // Initialize others as null for on-demand generation
+      brandingData.logo.simplifiedImageUrl = null;
+      brandingData.logo.invertedImageUrl = null;
+      brandingData.logo.darkBgImageUrl = null;
+      brandingData.styleGuide.extraMockups = [];
 
     } catch (e: any) {
       const message = e?.message || String(e);
@@ -509,7 +507,7 @@ const Dashboard: React.FC = () => {
       } catch (e) { console.warn("Final progress update failed:", e); }
 
       // Process all images to storage before saving the full branding data
-      setLoadingStep("Optimisation et stockage des actifs...");
+      setLoadingStep("Finalisation et sauvegarde sécurisée...");
       try {
         const processedBrandingData = await processBrandingImages(user!.uid, projectId, brandingData);
 
@@ -596,10 +594,10 @@ const Dashboard: React.FC = () => {
   };
 
   const socialLinks = [
-    { name: 'LinkedIn', icon: <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>, url: 'https://linkedin.com' },
-    { name: 'Instagram', icon: <path d="M12 2.163c3.204 0 3.584.012 4.85.07 1.366.062 2.633.332 3.608 1.308.975.975 1.245 2.242 1.308 3.608.058 1.266.07 1.646.07 4.85s-.012 3.584-.07 4.85c-.063 1.366-.333 2.633-1.308 3.608-.975.975-2.242 1.245-3.608 1.308-1.266.058-1.646.07-4.85.07s-3.584-.012-4.85-.07c-1.366-.063-2.633-.333-3.608-1.308-.975-.975-1.245-2.242-1.308-3.608-.058-1.266-.07-1.646-.07-4.85s.012-3.584.07-4.85c.062-1.366.332-2.633 1.308-3.608.975-.975 2.242-1.245 3.608-1.308 1.266-.058 1.646-.07 4.85-.07zm0-2.163c-3.259 0-3.667.014-4.947.072-1.62.074-3.14.391-4.3 1.551-1.159 1.159-1.477 2.68-1.551 4.3-.058 1.279-.072 1.688-.072 4.947s.014 3.667.072 4.947c.074 1.62.391 3.14 1.551 4.3 1.159 1.159 2.68 1.477 4.3 1.551 1.279.058 1.688.072 4.947.072s3.667-.014 4.947-.072c1.62-.074 3.14-.391 4.3-1.551 1.159-1.159 1.477-2.68 1.551-4.3.058-1.279.072-1.688.072-4.947s-.014-3.667-.072-4.947c-.074-1.62-.391-3.14-1.551-4.3-1.159-1.159-2.68-1.477-4.3-1.551-1.279-.058-1.688-.072-4.947-.072zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>, url: 'https://instagram.com' },
-    { name: 'X', icon: <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>, url: 'https://x.com' },
-    { name: 'Facebook', icon: <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>, url: 'https://facebook.com' },
+    { name: 'LinkedIn', icon: <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>, url: 'https://linkedin.com/company/brandgenius-ai' },
+    { name: 'Instagram', icon: <path d="M12 2.163c3.204 0 3.584.012 4.85.07 1.366.062 2.633.332 3.608 1.308.975.975 1.245 2.242 1.308 3.608.058 1.266.07 1.646.07 4.85s-.012 3.584-.07 4.85c-.063 1.366-.333 2.633-1.308 3.608-.975.975-2.242 1.245-3.608 1.308-1.266.058-1.646.07-4.85.07s-3.584-.012-4.85-.07c-1.366-.063-2.633-.333-3.608-1.308-.975-.975-1.245-2.242-1.308-3.608-.058-1.266-.07-1.646-.07-4.85s.012-3.584.07-4.85c.062-1.366.332-2.633 1.308-3.608.975-.975 2.242-1.245 3.608-1.308 1.266-.058 1.646-.07 4.85-.07zm0-2.163c-3.259 0-3.667.014-4.947.072-1.62.074-3.14.391-4.3 1.551-1.159 1.159-1.477 2.68-1.551 4.3-.058 1.279-.072 1.688-.072 4.947s.014 3.667.072 4.947c.074 1.62.391 3.14 1.551 4.3 1.159 1.159 2.68 1.477 4.3 1.551 1.279.058 1.688.072 4.947.072s3.667-.014 4.947-.072c1.62-.074 3.14-.391 4.3-1.551 1.159-1.159 1.477-2.68 1.551-4.3.058-1.279.072-1.688.072-4.947s-.014-3.667-.072-4.947c-.074-1.62-.391-3.14-1.551-4.3-1.159-1.159-2.68-1.477-4.3-1.551-1.279-.058-1.688-.072-4.947-.072zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>, url: 'https://instagram.com/brandgenius_ai' },
+    { name: 'X', icon: <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>, url: 'https://x.com/brandgenius_ai' },
+    { name: 'Facebook', icon: <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>, url: 'https://facebook.com/brandgeniusai' },
   ];
 
   return (
@@ -784,13 +782,27 @@ const Dashboard: React.FC = () => {
         {activeTab === 'projects' && (
           <div className="py-12">
             <div className="flex justify-between items-center mb-12">
-              <h2 className="text-5xl font-serif italic text-white">Mes Projets</h2>
-              <button 
-                onClick={() => setIsCreateModalOpen(true)}
-                className="px-8 py-4 bg-indigo-600 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl hover:bg-indigo-700 transition-all shadow-xl"
-              >
-                Nouveau Projet
-              </button>
+              <div className="flex flex-col">
+                <h2 className="text-5xl font-serif italic text-white">Mes Projets</h2>
+                <p className="text-white/40 text-sm mt-2">Gérez vos identités visuelles générées</p>
+              </div>
+              <div className="flex gap-4">
+                <button 
+                  onClick={handleClearAllGenerations}
+                  className="px-8 py-4 bg-rose-500/10 border border-rose-500/20 text-rose-500 font-black uppercase tracking-widest text-[10px] rounded-2xl hover:bg-rose-500/20 transition-all shadow-xl flex items-center"
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Tout Effacer
+                </button>
+                <button 
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="px-8 py-4 bg-indigo-600 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl hover:bg-indigo-700 transition-all shadow-xl"
+                >
+                  Nouveau Projet
+                </button>
+              </div>
             </div>
             <MyProjects 
               projects={projects} 
