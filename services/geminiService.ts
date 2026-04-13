@@ -35,16 +35,17 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, backoff = 2000): 
       errorMsg.includes("limit exceeded") ||
       error?.status === "RESOURCE_EXHAUSTED" ||
       error?.code === 429 ||
+      error?.error?.code === 429 || // Added check for nested error object
       errorStr.includes("429") ||
       errorStr.includes("RESOURCE_EXHAUSTED");
     
     if (isQuotaError && retries > 0) {
-      // Use a much longer backoff for quota errors to avoid burning quota
-      const quotaBackoff = backoff * 2; 
-      console.warn(`Quota exceeded, retrying in ${quotaBackoff}ms... (${retries} attempts left)`);
+      // Use a much longer backoff for quota errors (starting at 5s)
+      const quotaBackoff = Math.max(backoff, 5000) * 1.5; 
+      console.warn(`Quota exceeded (429), retrying in ${Math.round(quotaBackoff)}ms... (${retries} attempts left)`);
       await new Promise(resolve => setTimeout(resolve, quotaBackoff));
       // Exponential backoff with jitter
-      const nextBackoff = quotaBackoff * 2 + Math.floor(Math.random() * 2000);
+      const nextBackoff = quotaBackoff * 2 + Math.floor(Math.random() * 3000);
       return withRetry(fn, retries - 1, nextBackoff);
     }
     throw error;
@@ -52,20 +53,25 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, backoff = 2000): 
 }
 
 const SYSTEM_INSTRUCTION = `
-Tu es un Directeur Artistique Senior et Expert en Stratégie de Marque avec plus de 20 ans d'expérience.
-Ton expertise couvre la sémiotique, la psychologie des couleurs, la typographie avancée et les principes du Gestalt.
-Ton objectif est de créer des identités visuelles qui sont à la fois INTEMPORELLES, PROFESSIONNELLES et MÉMORABLES.
+Tu es un Designer Graphique Senior et Directeur Artistique avec 25 ans d'expérience en identité visuelle et branding. Tu as travaillé pour des agences internationales et des marques iconiques.
+Ton expertise est absolue en :
+- Principes fondamentaux du logo (lisibilité, scalabilité, intemporalité, polyvalence, mémorabilité).
+- Théorie et psychologie des couleurs appliquée au branding.
+- Typographie avancée (hiérarchie, associations, lisibilité).
+- Grilles, proportions, espaces négatifs et règles d'or (Gestalt).
+- Standards professionnels multi-supports (print, digital, motion).
+
+Ton objectif est de créer des identités visuelles de niveau agence internationale, cohérentes et stratégiquement puissantes.
 
 IMPORTANT: Tu dois impérativement répondre avec un JSON VALIDE. 
 Échappe TOUTES les guillemets doubles à l'intérieur des chaînes de caractères avec un backslash (\\").
 N'utilise JAMAIS de retours à la ligne non échappés à l'intérieur d'une valeur de chaîne de caractères.
 
-RÈGLES D'OR DU DESIGN DE LOGO :
-1. Simplicité : Un logo doit être facile à identifier et à mémoriser.
-2. Mémorabilité : Il doit être distinctif et avoir un impact immédiat.
-3. Intemporalité : Évite les tendances éphémères ; vise la longévité.
-4. Polyvalence : Il doit fonctionner sur tous les supports (petit/grand, noir/blanc).
-5. Pertinence : Il doit refléter l'essence et les valeurs du secteur d'activité.
+RÈGLES D'OR DU DESIGN :
+1. Simplicité & Impact : Un logo doit être identifiable instantanément.
+2. Intemporalité : Vise la longévité, évite les modes éphémères.
+3. Polyvalence : Le design doit fonctionner parfaitement en noir et blanc, en très petite taille, et sur tous types de fonds.
+4. Cohérence Systémique : Pense au logo comme le cœur d'un écosystème visuel complet.
 
 RÈGLES TECHNIQUES POUR LE SVG (TRACÉ VECTORIEL) :
 1. Le champ 'svgPath' DOIT contenir UNIQUEMENT la chaîne de caractères de l'attribut 'd' d'un élément <path> SVG.
@@ -271,7 +277,7 @@ function safeParseJSON(text: string): any {
         } else if (char === '}' || char === ']') {
           const last = stack.pop();
           if ((char === '}' && last !== '{') || (char === ']' && last !== '[')) {
-            // Mismatch, put it back or ignore? For now, just stop
+            // Mismatch
           }
         }
       }
@@ -297,45 +303,75 @@ function safeParseJSON(text: string): any {
     return str;
   };
 
+  // Sanitize JSON by removing trailing commas and fixing basic string issues
+  const sanitizeJSON = (str: string): string => {
+    let sanitized = str
+      .replace(/,\s*([}\]])/g, '$1') // Remove trailing commas
+      .replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":'); // Ensure keys are quoted (if missing)
+
+    // Fix unterminated strings and raw newlines in strings
+    let inString = false;
+    let escaped = false;
+    let result = "";
+    for (let i = 0; i < sanitized.length; i++) {
+      const char = sanitized[i];
+      if (char === '"' && !escaped) {
+        inString = !inString;
+      }
+      
+      if (inString && (char === '\n' || char === '\r')) {
+        result += "\\n";
+      } else {
+        result += char;
+      }
+      
+      escaped = char === '\\' && !escaped;
+    }
+    
+    if (inString) {
+      result += '"';
+    }
+    
+    return result;
+  };
+
   try {
     return JSON.parse(cleanText);
   } catch (e: any) {
     console.error("Initial JSON Parse Error:", e.message);
     
     // Attempt 1: Extract JSON from surrounding text
-    const extracted = extractJSON(cleanText);
-    if (extracted !== cleanText) {
-      try {
-        return JSON.parse(extracted);
-      } catch (extError) {
-        console.error("Failed to parse extracted JSON:", extError);
-      }
-    }
-
-    // Attempt 2: Fix raw newlines in strings
+    let processed = extractJSON(cleanText);
     try {
-      const fixedNewlines = extracted.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/gs, (match, p1) => {
-        return '"' + p1.replace(/\n/g, "\\n").replace(/\r/g, "\\r") + '"';
-      });
-      return JSON.parse(fixedNewlines);
-    } catch (newlineError) {
-      console.error("Failed to fix JSON with escaped newlines:", newlineError);
-      
-      // Attempt 3: Fix truncation
+      return JSON.parse(processed);
+    } catch (extError) {
+      // Attempt 2: Fix raw newlines in strings
       try {
-        const fixedTruncated = fixTruncatedJSON(extracted);
-        return JSON.parse(fixedTruncated);
-      } catch (truncError) {
-        console.error("Failed to fix truncated JSON:", truncError);
-        
-        // Attempt 4: More aggressive fix - try to find the last valid JSON structure
-        for (let i = extracted.length - 1; i > 0; i--) {
-          if (extracted[i] === '}' || extracted[i] === ']') {
-            try {
-              const partial = fixTruncatedJSON(extracted.substring(0, i + 1));
-              return JSON.parse(partial);
-            } catch (pError) {
-              continue;
+        const fixedNewlines = processed.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/gs, (match, p1) => {
+          return '"' + p1.replace(/\n/g, "\\n").replace(/\r/g, "\\r") + '"';
+        });
+        return JSON.parse(fixedNewlines);
+      } catch (newlineError) {
+        // Attempt 3: Sanitize (trailing commas, etc)
+        try {
+          const sanitized = sanitizeJSON(processed);
+          return JSON.parse(sanitized);
+        } catch (sanError) {
+          // Attempt 4: Fix truncation
+          try {
+            const fixedTruncated = fixTruncatedJSON(processed);
+            return JSON.parse(fixedTruncated);
+          } catch (truncError) {
+            // Attempt 5: More aggressive fix - try to find the last valid JSON structure
+            for (let i = processed.length - 1; i > 0; i--) {
+              if (processed[i] === '}' || processed[i] === ']') {
+                try {
+                  const partial = fixTruncatedJSON(processed.substring(0, i + 1));
+                  return JSON.parse(partial);
+                } catch (pError) {
+                  continue;
+                }
+              }
             }
           }
         }
@@ -386,7 +422,15 @@ export const generateBranding = async (profile: BrandProfile, usePro: boolean = 
       },
     });
 
-    return safeParseJSON(response.text);
+    const parsed = safeParseJSON(response.text);
+    
+    // Normalize structure to prevent UI crashes
+    if (!parsed.logo) parsed.logo = {} as any;
+    if (!parsed.styleGuide) parsed.styleGuide = {} as any;
+    if (!parsed.analysis) parsed.analysis = {} as any;
+    if (!parsed.analysis.futureRecommendations) parsed.analysis.futureRecommendations = [];
+    
+    return parsed;
   });
 };
 
@@ -430,7 +474,15 @@ export const generateBrandingFromLogo = async (logoBase64: string, companyName: 
       },
     });
 
-    return safeParseJSON(response.text);
+    const parsed = safeParseJSON(response.text);
+
+    // Normalize structure to prevent UI crashes
+    if (!parsed.logo) parsed.logo = {} as any;
+    if (!parsed.styleGuide) parsed.styleGuide = {} as any;
+    if (!parsed.analysis) parsed.analysis = {} as any;
+    if (!parsed.analysis.futureRecommendations) parsed.analysis.futureRecommendations = [];
+
+    return parsed;
   });
 };
 
@@ -460,6 +512,9 @@ export const generateMockup = async (prompt: string, base64Logo?: string, aspect
       }
 
       try {
+        // Add a small artificial delay to avoid hitting rate limits on sequential calls
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
         const response = await ai.models.generateContent({
           model: model,
           contents: { parts: parts },
@@ -539,6 +594,9 @@ export const generateImage = async (prompt: string, base64ReferenceImage?: strin
       }
 
       try {
+        // Add a small artificial delay to avoid hitting rate limits on sequential calls
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
         const response = await ai.models.generateContent({
           model: model,
           contents: { parts: parts },
@@ -596,6 +654,10 @@ export const editImageWithPrompt = async (base64Image: string, prompt: string): 
   try {
     return await withRetry(async () => {
       const ai = getAI();
+      
+      // Add a small artificial delay to avoid hitting rate limits on sequential calls
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
       const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',

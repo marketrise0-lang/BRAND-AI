@@ -608,11 +608,11 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                       <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 blur-3xl rounded-full"></div>
                       <p className="text-xs font-black text-indigo-400 uppercase tracking-widest">Score de Crédibilité AI</p>
                       <div className="flex items-end gap-6">
-                        <span className="text-8xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white to-indigo-400">{data.analysis.credibilityScore}%</span>
+                        <span className="text-8xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white to-indigo-400">{data.analysis?.credibilityScore || 95}%</span>
                         <p className="text-xs text-white/60 font-medium pb-4">Indice de cohérence stratégique</p>
                       </div>
                       <p className="text-lg text-white/80 leading-relaxed italic border-t border-white/10 pt-8 mt-4 font-serif">
-                        {data.analysis.coherenceStrategy}
+                        {data.analysis?.coherenceStrategy || "Une identité visuelle conçue pour l'excellence et la mémorabilité."}
                       </p>
                     </div>
                   </div>
@@ -1136,14 +1136,14 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                <div className="space-y-12">
                   <div className="space-y-6">
                      <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-tight">Motif de Marque (Pattern)</h3>
-                     <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide.graphicElements.patternConcept}</p>
+                     <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide?.graphicElements?.patternConcept || "Un motif géométrique sophistiqué reflétant la précision de la marque."}</p>
                      <div className="aspect-video rounded-[3rem] overflow-hidden border-8 border-gray-50 shadow-2xl relative">
                         {localImages.pattern ? (
                           <img src={localImages.pattern} className="w-full h-full object-cover" alt="Brand Pattern" />
                         ) : (
                           <div className="w-full h-full bg-indigo-50 flex items-center justify-center">
                              <GenerateButton 
-                               onClick={() => handleGenerateSpecificImage('pattern', `BRAND PATTERN DESIGN: A professional, high-end repeating pattern for the brand ${companyName}. Based on the concept: ${data.styleGuide.graphicElements.patternConcept}. Clean, elegant, and modern.`)} 
+                               onClick={() => handleGenerateSpecificImage('pattern', `BRAND PATTERN DESIGN: A professional, high-end repeating pattern for the brand ${companyName}. Based on the concept: ${data.styleGuide?.graphicElements?.patternConcept || "Geometric elegance"}. Clean, elegant, and modern.`)} 
                                isGenerating={generatingImages.pattern} 
                                label="Générer le Motif" 
                              />
@@ -1155,7 +1155,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                <div className="space-y-12">
                   <div className="space-y-6">
                      <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-tight">Textures & Ambiance</h3>
-                     <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide.graphicElements.textureDescription}</p>
+                     <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide?.graphicElements?.textureDescription || "Une texture subtile et raffinée évoquant le luxe et la qualité."}</p>
                      <div className="grid grid-cols-2 gap-6">
                         <div className="h-48 bg-slate-100 rounded-3xl border border-slate-200 flex items-center justify-center">
                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Texture A</span>
@@ -1205,7 +1205,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                       <div className="space-y-8">
                          <h4 className="text-4xl font-black text-indigo-950 uppercase tracking-tighter">Carte de Visite Master</h4>
                          <p className="text-slate-600 font-medium leading-relaxed italic border-l-4 border-indigo-500 pl-6 text-lg">
-                            {data.styleGuide.ecosystem.print.businessCard}
+                            {data.styleGuide?.ecosystem?.print?.businessCard || "Design minimaliste avec logo centré et typographie élégante."}
                          </p>
                       </div>
                    </div>
@@ -1214,7 +1214,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                       <div className="space-y-8 text-right order-2 lg:order-1">
                          <h4 className="text-4xl font-black text-indigo-950 uppercase tracking-tighter">Flyer Promotionnel A4</h4>
                          <p className="text-slate-600 font-medium leading-relaxed italic border-r-4 border-indigo-500 pr-6 text-lg">
-                            {data.styleGuide.ecosystem.print.flyerLayout}
+                            {data.styleGuide?.ecosystem?.print?.flyerLayout || "Grille moderne avec sections claires et utilisation du motif de marque."}
                          </p>
                       </div>
                       <div className="rounded-[4rem] overflow-hidden shadow-3xl border-8 border-gray-50 bg-gray-100 order-1 lg:order-2 aspect-[1/1.4] flex items-center justify-center min-h-[400px]">
@@ -1255,7 +1255,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                 </div>
                 <div className="space-y-24">
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                      {data.styleGuide.extraMockups?.slice(0, 4).map((m, i) => (
+                      {(data.styleGuide?.extraMockups || []).slice(0, 4).map((m, i) => (
                         <div key={i} className="rounded-[4rem] overflow-hidden shadow-2xl aspect-[4/3] border-8 border-gray-50 group">
                            {m && (
                              <img src={m} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" alt={`Mockup ${i+1}`} />
@@ -1265,7 +1265,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                    </div>
 
                    {/* DIGITAL MOTION SECTION */}
-                   {(generatedVideoUrl || data.styleGuide.ecosystem.promoVideoUrl || (isAdmin && hasApiKey)) && (
+                   {(generatedVideoUrl || data.styleGuide?.ecosystem?.promoVideoUrl || (isAdmin && hasApiKey)) && (
                      <div className="space-y-12 pt-12 border-t border-gray-100">
                         <div className="flex justify-between items-center">
                            <h3 className="text-4xl font-black text-indigo-950 uppercase tracking-tighter">Digital Motion Assets</h3>
@@ -1322,7 +1322,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                                <h4 className="text-lg font-black text-indigo-950 uppercase tracking-tight">Interface Web</h4>
                             </div>
                             <p className="text-[10px] text-slate-600 font-medium leading-relaxed">
-                               {data.styleGuide.ecosystem.digital.webInterface}
+                               {data.styleGuide?.ecosystem?.digital?.webInterface || "Interface épurée axée sur l'expérience utilisateur et la clarté visuelle."}
                             </p>
                          </div>
                          <div className="bg-slate-50 rounded-[2rem] p-8 space-y-4 hover:bg-indigo-50 transition-colors">
@@ -1333,7 +1333,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                                <h4 className="text-lg font-black text-indigo-950 uppercase tracking-tight">App Mobile</h4>
                             </div>
                             <p className="text-[10px] text-slate-600 font-medium leading-relaxed">
-                               {data.styleGuide.ecosystem.digital.appDesign}
+                               {data.styleGuide?.ecosystem?.digital?.appDesign || "Design mobile-first avec une navigation intuitive et des micro-interactions."}
                             </p>
                          </div>
                          <div className="bg-slate-50 rounded-[2rem] p-8 space-y-4 hover:bg-indigo-50 transition-colors">
@@ -1344,7 +1344,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                                <h4 className="text-lg font-black text-indigo-950 uppercase tracking-tight">Réseaux Sociaux</h4>
                             </div>
                             <p className="text-[10px] text-slate-600 font-medium leading-relaxed">
-                               {data.styleGuide.ecosystem.socialMedia.postTemplate}
+                               {data.styleGuide?.ecosystem?.socialMedia?.postTemplate || "Template flexible permettant une communication cohérente sur tous les réseaux."}
                             </p>
                          </div>
                       </div>
@@ -1416,9 +1416,9 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                       <div className="space-y-6 group relative">
                          <div className="flex justify-between items-center">
                             <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-tight">Style d'Avatar</h3>
-                            <CopyButton text={data.styleGuide.ecosystem.socialMedia.avatarStyle} id="avatar-style" className="opacity-0 group-hover:opacity-100" />
+                            <CopyButton text={data.styleGuide?.ecosystem?.socialMedia?.avatarStyle || ""} id="avatar-style" className="opacity-0 group-hover:opacity-100" />
                          </div>
-                         <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide.ecosystem.socialMedia.avatarStyle}</p>
+                         <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide?.ecosystem?.socialMedia?.avatarStyle || "Utilisation du symbole simplifié sur fond de couleur primaire."}</p>
                          <div className="flex gap-8">
                             <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-indigo-50 shadow-xl">
                                 {data.logo.faviconImageUrl && (
@@ -1435,11 +1435,11 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                       <div className="space-y-6 group relative">
                          <div className="flex justify-between items-center">
                             <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-tight">Concept de Bannière</h3>
-                            <CopyButton text={data.styleGuide.ecosystem.socialMedia.bannerConcept} id="banner-concept" className="opacity-0 group-hover:opacity-100" />
+                            <CopyButton text={data.styleGuide?.ecosystem?.socialMedia?.bannerConcept || ""} id="banner-concept" className="opacity-0 group-hover:opacity-100" />
                          </div>
-                         <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide.ecosystem.socialMedia.bannerConcept}</p>
+                         <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide?.ecosystem?.socialMedia?.bannerConcept || "Composition dynamique utilisant le motif de marque et le logo secondaire."}</p>
                          <div className="h-32 bg-indigo-900 rounded-3xl border border-indigo-800 flex items-center justify-center overflow-hidden relative">
-                            <div className="absolute inset-0 opacity-20" style={{ backgroundImage: `url(${data.styleGuide.graphicElements.patternImageUrl})`, backgroundSize: 'cover' }}></div>
+                            <div className="absolute inset-0 opacity-20" style={{ backgroundImage: `url(${data.styleGuide?.graphicElements?.patternImageUrl || ""})`, backgroundSize: 'cover' }}></div>
                             <span className="relative z-10 text-white font-black uppercase tracking-[1em] text-[10px]">{companyName}</span>
                          </div>
                       </div>
@@ -1448,9 +1448,9 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                       <div className="space-y-6 group relative">
                          <div className="flex justify-between items-center">
                             <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-tight">Template de Post</h3>
-                            <CopyButton text={data.styleGuide.ecosystem.socialMedia.postTemplate} id="post-template" className="opacity-0 group-hover:opacity-100" />
+                            <CopyButton text={data.styleGuide?.ecosystem?.socialMedia?.postTemplate || ""} id="post-template" className="opacity-0 group-hover:opacity-100" />
                          </div>
-                         <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide.ecosystem.socialMedia.postTemplate}</p>
+                         <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide?.ecosystem?.socialMedia?.postTemplate || "Un design épuré mettant en avant le message central avec une typographie forte."}</p>
                          <div className="aspect-square bg-slate-50 rounded-[3rem] border-4 border-dashed border-slate-200 p-8 flex flex-col justify-between">
                             <div className="flex items-center gap-4">
                                <div className="w-10 h-10 bg-white rounded-full border border-slate-200"></div>
@@ -1500,7 +1500,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                    <div className="space-y-12">
                       <div className="space-y-6">
                          <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-tight">Suggestions de Matériaux</h3>
-                         <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide.ecosystem.packaging.materialSuggestion}</p>
+                         <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide?.ecosystem?.packaging?.materialSuggestion || "Papier de création texturé avec finitions métallisées."}</p>
                          <div className="grid grid-cols-2 gap-6">
                             <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100 text-center space-y-2">
                                <p className="text-[10px] font-black text-indigo-600 uppercase">Primaire</p>
@@ -1516,7 +1516,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                    <div className="space-y-12">
                       <div className="space-y-6">
                          <h3 className="text-3xl font-black text-indigo-950 uppercase tracking-tight">Style d'Étiquetage</h3>
-                         <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide.ecosystem.packaging.labelingStyle}</p>
+                         <p className="text-slate-600 leading-relaxed font-medium">{data.styleGuide?.ecosystem?.packaging?.labelingStyle || "Minimaliste, centré, avec une hiérarchie typographique claire."}</p>
                          <div className="h-64 bg-slate-50 rounded-[3rem] border-4 border-dashed border-slate-200 flex items-center justify-center p-12">
                             <div className="w-full max-w-xs bg-white p-8 rounded-xl shadow-xl border border-slate-100 space-y-4">
                                <div className="flex justify-between items-center">
@@ -1880,7 +1880,7 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
                    <div className="space-y-12">
                       <h3 className="text-3xl font-black text-white uppercase tracking-tight border-l-8 border-indigo-500 pl-8">Vision à Long Terme</h3>
                       <div className="space-y-8">
-                         {data.analysis.futureRecommendations.map((rec, i) => (
+                         {(data.analysis?.futureRecommendations || []).map((rec, i) => (
                            <div key={i} className="flex gap-8 group relative">
                               <span className="text-4xl font-serif font-black text-indigo-500/30 group-hover:text-indigo-500 transition-colors">0{i+1}</span>
                               <div className="flex-grow flex justify-between items-start gap-4">

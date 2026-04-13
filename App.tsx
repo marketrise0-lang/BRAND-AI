@@ -136,6 +136,7 @@ const Dashboard: React.FC = () => {
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [isDashboardLoading, setIsDashboardLoading] = useState(true);
+  const [quotaWarning, setQuotaWarning] = useState<boolean>(false);
   
   // Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -249,10 +250,10 @@ const Dashboard: React.FC = () => {
         type: 'auth',
         message: "Une erreur d'accès aux modèles avancés est survenue. Veuillez sélectionner une clé API valide."
       });
-    } else if (message.includes("429") || message.includes("RESOURCE_EXHAUSTED") || message.includes("quota")) {
+    } else if (message.includes("429") || message.includes("RESOURCE_EXHAUSTED") || message.includes("quota") || JSON.stringify(err).includes("429")) {
       setError({
         type: 'quota',
-        message: "Votre quota API est épuisé. Veuillez vérifier vos limites."
+        message: "Quota API épuisé. Certains visuels n'ont pas pu être générés. Veuillez réessayer dans quelques minutes."
       });
     } else if (message.includes("API_KEY_INVALID")) {
       setError({
@@ -303,6 +304,7 @@ const Dashboard: React.FC = () => {
     setIsLoading(true);
     setLoadingStep("Vision par ordinateur : Analyse chromatique du logo...");
     setError(null);
+    setQuotaWarning(false);
     
     abortControllerRef.current = new AbortController();
     
@@ -357,6 +359,7 @@ const Dashboard: React.FC = () => {
     setBrandProfile(profileData);
     setLoadingStep("Analyse stratégique de l'ADN de marque...");
     setError(null);
+    setQuotaWarning(false);
     
     abortControllerRef.current = new AbortController();
     
@@ -457,24 +460,40 @@ const Dashboard: React.FC = () => {
       const shuffledMockups = [...mockupPool].sort(() => 0.5 - Math.random()).slice(0, 5);
 
       const colorString = (brandingData.styleGuide?.colors || []).map(c => c.hex).join(', ');
-      const patternPrompt = `Seamless high-end brand pattern. Concept: ${brandingData.styleGuide.graphicElements.patternConcept}. Colors: ${colorString}.`;
+      const patternPrompt = `Seamless high-end brand pattern. Concept: ${brandingData.styleGuide?.graphicElements?.patternConcept || "Geometric elegance"}. Colors: ${colorString}.`;
       const mainMockupPrompt = `MASTER PRESTIGE MOCKUP: Complete stationery set for ${companyName} with envelopes and letterheads.`;
 
       // BATCHED SEQUENTIAL GENERATION (to avoid hitting quota limits simultaneously)
       const faviconUrl = await smartGenerateImage(variationsPrompts[4], logoUrl);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
       setLoadingStep("Génération du système d'identité monochrome...");
       const monochromeUrl = await smartGenerateImage(variationsPrompts[1], logoUrl);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
       setLoadingStep("Création du motif de marque exclusif...");
       const patternUrl = await smartGenerateImage(patternPrompt, logoUrl);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
       setLoadingStep("Mise en situation de la marque (Mockup Maître)...");
       const mainMockupUrl = await smartGenerateImage(mainMockupPrompt, logoUrl);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
       setLoadingStep("Conception des supports imprimés (Cartes & Flyers)...");
       const businessCardUrl = await smartGenerateImage(businessCardPrompt, logoUrl);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
       const flyerUrl = await smartGenerateImage(flyerPrompt, logoUrl);
       
       if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
 
       // ASSIGN RESULTS
+      if (!brandingData.logo) brandingData.logo = {} as any;
+      if (!brandingData.styleGuide) brandingData.styleGuide = {} as any;
+      if (!brandingData.styleGuide.graphicElements) brandingData.styleGuide.graphicElements = {} as any;
+      if (!brandingData.styleGuide.ecosystem) brandingData.styleGuide.ecosystem = {} as any;
+      if (!brandingData.styleGuide.ecosystem.print) brandingData.styleGuide.ecosystem.print = {} as any;
+
       brandingData.logo.faviconImageUrl = faviconUrl || logoUrl;
       brandingData.logo.monochromeImageUrl = monochromeUrl || null;
       brandingData.styleGuide.graphicElements.patternImageUrl = patternUrl || null;
@@ -492,6 +511,9 @@ const Dashboard: React.FC = () => {
       const message = e?.message || String(e);
       if (e.name === 'AbortError' || message.toLowerCase().includes("aborted") || message.toLowerCase().includes("the user aborted a request")) throw e;
       console.warn("Massive Generation Warning:", e);
+      if (message.includes("429") || message.includes("RESOURCE_EXHAUSTED") || message.includes("quota")) {
+        setQuotaWarning(true);
+      }
     }
 
     if (signal?.aborted) throw new DOMException("The user aborted a request.", "AbortError");
@@ -502,38 +524,44 @@ const Dashboard: React.FC = () => {
           totalSteps: 5,
           completedSteps: 5,
           progressPercent: 100,
-          lastAction: 'Projet Terminé'
+          lastAction: 'Génération terminée'
         });
       } catch (e) { console.warn("Final progress update failed:", e); }
 
-      // Process all images to storage before saving the full branding data
-      setLoadingStep("Finalisation et sauvegarde sécurisée...");
-      try {
-        const processedBrandingData = await processBrandingImages(user!.uid, projectId, brandingData);
-
-        await updateProject(user!.uid, projectId, { 
-          status: 'completed',
-          data: processedBrandingData,
-          previewImage: processedBrandingData.logo.generatedImageUrl
-        });
-        await logActivity(user!.uid, {
-          type: 'logo_generation',
-          projectId
-        });
-      } catch (e) {
-        console.error("Final project update failed:", e);
-        // Fallback: update with raw data if storage fails (might hit limit but better than nothing)
+      // We don't await the final saving/storage step to let the user see the result immediately
+      // This addresses the user's request to "skip" the waiting time for the saving part
+      (async () => {
         try {
+          console.log("Starting background saving and asset optimization...");
+          const processedBrandingData = await processBrandingImages(user!.uid, projectId, brandingData);
+
           await updateProject(user!.uid, projectId, { 
             status: 'completed',
-            data: brandingData,
-            previewImage: brandingData.logo.generatedImageUrl
+            data: processedBrandingData,
+            previewImage: processedBrandingData.logo.generatedImageUrl
           });
-        } catch (innerE) { console.error("Critical: Final fallback update failed:", innerE); }
-      }
+          await logActivity(user!.uid, {
+            type: 'logo_generation',
+            projectId
+          });
+          console.log("Project saved successfully in background.");
+        } catch (e) {
+          console.error("Background project saving failed:", e);
+          // Fallback: update with raw data if storage fails (might hit limit but better than nothing)
+          try {
+            await updateProject(user!.uid, projectId, { 
+              status: 'completed',
+              data: brandingData,
+              previewImage: brandingData.logo.generatedImageUrl
+            });
+          } catch (innerE) { console.error("Critical: Background fallback update failed:", innerE); }
+        }
+      })();
     }
 
     setResult(brandingData);
+    setIsLoading(false);
+    setLoadingStep("");
     setTimeout(() => {
       document.getElementById('result-section')?.scrollIntoView({ behavior: 'smooth' });
     }, 300);
@@ -728,13 +756,25 @@ const Dashboard: React.FC = () => {
                       </button>
                     )}
                     <a 
-                      href="https://ai.google.dev/gemini-api/docs/billing" 
+                      href="https://ai.google.dev/gemini-api/docs/rate-limits" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="px-10 py-4 bg-slate-100 text-slate-600 font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-slate-200 transition-all"
                     >
                       Gérer la Facturation
                     </a>
+                  </div>
+                </div>
+              )}
+
+              {quotaWarning && (
+                <div className="mt-12 p-8 bg-amber-500/10 border-2 border-amber-500/30 rounded-[2.5rem] flex items-center gap-6 text-amber-500 animate-in slide-in-from-top duration-700 shadow-xl">
+                  <div className="w-12 h-12 bg-amber-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                  </div>
+                  <div>
+                    <p className="text-lg font-black uppercase tracking-wider mb-1">Attention : Quota Partiel Atteint</p>
+                    <p className="text-sm font-medium opacity-80">La limite de requêtes a été atteinte. Certains visuels secondaires n'ont pas pu être générés automatiquement. Vous pouvez tenter de les générer individuellement plus tard.</p>
                   </div>
                 </div>
               )}
