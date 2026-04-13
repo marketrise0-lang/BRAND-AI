@@ -804,7 +804,7 @@ const Dashboard: React.FC = () => {
             )}
             
             {!result && !isLoading && (!subscription || subscription.plan !== 'free') && <AdvancedLab />}
-            {!result && !isLoading && (subscription?.plan === 'free' || !subscription) && (
+            {!result && !isLoading && !isDashboardLoading && (subscription?.plan === 'free' || !subscription) && (
               <div className="mt-20 p-12 glass-dark rounded-[3rem] border border-white/10 text-center">
                 <h3 className="text-2xl font-serif italic text-white mb-4">Advanced Lab (Pro Only)</h3>
                 <p className="text-white/40 mb-8">Passez au plan Pro pour accéder aux outils de génération d'élite (Gemini 3 Pro & Veo).</p>

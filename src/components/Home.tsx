@@ -24,12 +24,6 @@ const Home: React.FC = () => {
   const navigate = useNavigate();
   const [currentSlide, setCurrentSlide] = useState(0);
 
-  useEffect(() => {
-    if (user) {
-      navigate('/dashboard');
-    }
-  }, [user, navigate]);
-
   const carouselItems = [
     {
       title: "Identité Visuelle Complète",
@@ -71,6 +65,19 @@ const Home: React.FC = () => {
   }, []);
 
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('annual');
+
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash) {
+      const id = hash.replace('#', '');
+      const element = document.getElementById(id);
+      if (element) {
+        setTimeout(() => {
+          element.scrollIntoView({ behavior: 'smooth' });
+        }, 500);
+      }
+    }
+  }, []);
 
   const pricingPlans = [
     { 
