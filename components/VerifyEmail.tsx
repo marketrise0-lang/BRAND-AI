@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { signOut } from 'firebase/auth';
+import { signOut, sendEmailVerification } from 'firebase/auth';
 import { auth } from '../src/firebase';
 import { useAuth } from '../AuthContext';
 
@@ -9,6 +9,24 @@ const VerifyEmail: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const email = location.state?.email || user?.email || 'votre email';
+
+  const [isResending, setIsResending] = React.useState(false);
+  const [resendStatus, setResendStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
+
+  const handleResendEmail = async () => {
+    if (!user) return;
+    setIsResending(true);
+    setResendStatus('idle');
+    try {
+      await sendEmailVerification(user);
+      setResendStatus('success');
+    } catch (err) {
+      console.error("Resend error:", err);
+      setResendStatus('error');
+    } finally {
+      setIsResending(false);
+    }
+  };
 
   const handleBackToLogin = async () => {
     try {
@@ -35,12 +53,29 @@ const VerifyEmail: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={handleBackToLogin}
-          className="w-full py-5 bg-indigo-600 text-white font-black uppercase tracking-[0.2em] text-[10px] rounded-2xl hover:bg-indigo-700 transition-all shadow-xl"
-        >
-          RETOUR À LA CONNEXION
-        </button>
+        <div className="space-y-4">
+          <button
+            onClick={handleResendEmail}
+            disabled={isResending}
+            className="w-full py-4 bg-white/5 border border-white/10 text-white font-bold uppercase tracking-widest text-[10px] rounded-2xl hover:bg-white/10 transition-all disabled:opacity-50"
+          >
+            {isResending ? "ENVOI EN COURS..." : "RENVOYER L'EMAIL DE VÉRIFICATION"}
+          </button>
+
+          {resendStatus === 'success' && (
+            <p className="text-emerald-400 text-[10px] font-bold uppercase tracking-widest">Email envoyé avec succès !</p>
+          )}
+          {resendStatus === 'error' && (
+            <p className="text-red-400 text-[10px] font-bold uppercase tracking-widest">Erreur lors de l'envoi. Réessayez plus tard.</p>
+          )}
+
+          <button
+            onClick={handleBackToLogin}
+            className="w-full py-5 bg-indigo-600 text-white font-black uppercase tracking-[0.2em] text-[10px] rounded-2xl hover:bg-indigo-700 transition-all shadow-xl"
+          >
+            RETOUR À LA CONNEXION
+          </button>
+        </div>
       </div>
     </div>
   );

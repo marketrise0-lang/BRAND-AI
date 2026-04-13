@@ -919,7 +919,8 @@ const Auth: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
 
   if (user) {
-    if (user.emailVerified) {
+    const isGoogleUser = user.providerData.some(p => p.providerId === 'google.com');
+    if (user.emailVerified || isGoogleUser) {
       return <Navigate to="/dashboard" />;
     } else {
       return <Navigate to="/verify-email" state={{ email: user.email }} />;

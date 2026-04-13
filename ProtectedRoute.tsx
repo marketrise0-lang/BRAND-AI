@@ -22,7 +22,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, adminOnly = f
     return <Navigate to="/auth" />;
   }
 
-  if (!user.emailVerified) {
+  if (!user.emailVerified && user.providerData.some(p => p.providerId === 'password')) {
     return <Navigate to="/verify-email" state={{ email: user.email }} />;
   }
 

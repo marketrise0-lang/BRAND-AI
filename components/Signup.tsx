@@ -25,9 +25,6 @@ const Signup: React.FC<SignupProps> = ({ onToggle }) => {
       // Send verification email
       await sendEmailVerification(user);
       
-      // Sign out immediately
-      await signOut(auth);
-      
       // Redirect to verification screen
       navigate('/verify-email', { state: { email: user.email } });
     } catch (err: any) {

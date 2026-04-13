@@ -23,8 +23,6 @@ const Login: React.FC<LoginProps> = ({ onToggle }) => {
       const user = userCredential.user;
       
       if (!user.emailVerified) {
-        // Sign out if not verified
-        await signOut(auth);
         navigate('/verify-email', { state: { email: user.email } });
         return;
       }
