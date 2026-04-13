@@ -59,12 +59,7 @@ const Signup: React.FC<SignupProps> = ({ onToggle }) => {
       const userCredential = await signInWithPopup(auth, provider);
       const user = userCredential.user;
       
-      if (!user.emailVerified) {
-        await signOut(auth);
-        navigate('/verify-email', { state: { email: user.email } });
-        return;
-      }
-      
+      // Google users are typically verified by default
       navigate('/dashboard');
     } catch (err: any) {
       console.error("Google signup error:", err);

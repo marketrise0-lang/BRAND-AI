@@ -59,12 +59,8 @@ const Login: React.FC<LoginProps> = ({ onToggle }) => {
       const userCredential = await signInWithPopup(auth, provider);
       const user = userCredential.user;
       
-      if (!user.emailVerified) {
-        await signOut(auth);
-        navigate('/verify-email', { state: { email: user.email } });
-        return;
-      }
-      
+      // Google users are typically verified by default, and forcing verification 
+      // can cause friction or loops in some environments.
       navigate('/dashboard');
     } catch (err: any) {
       console.error("Google login error details:", {
