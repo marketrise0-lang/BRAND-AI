@@ -211,6 +211,14 @@ const Dashboard: React.FC = () => {
     }
   }, [user]);
 
+  useEffect(() => {
+    if (!isAdmin && projects.length === 2) {
+      setQuotaWarning(true);
+    } else {
+      setQuotaWarning(false);
+    }
+  }, [projects, isAdmin]);
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -253,7 +261,7 @@ const Dashboard: React.FC = () => {
     } else if (message.includes("429") || message.includes("RESOURCE_EXHAUSTED") || message.includes("quota") || JSON.stringify(err).includes("429")) {
       setError({
         type: 'quota',
-        message: "Quota API épuisé. Certains visuels n'ont pas pu être générés. Veuillez réessayer dans quelques minutes."
+        message: "Limite de quota API atteinte. Le système est actuellement très sollicité. Veuillez patienter 1 à 2 minutes avant de relancer une génération pour permettre au quota de se réinitialiser."
       });
     } else if (message.includes("API_KEY_INVALID")) {
       setError({
@@ -274,7 +282,7 @@ const Dashboard: React.FC = () => {
     if (isFree && projects.length >= 3) {
       setError({
         type: 'quota',
-        message: "Vous avez atteint la limite de 3 générations gratuites pour le plan Starter. Veuillez passer au plan Pro pour continuer."
+        message: "Vous avez atteint la limite de 3 générations gratuites pour le plan Starter. Veuillez passer au plan Pro pour continuer ou supprimer d'anciens projets."
       });
       return false;
     }
@@ -464,24 +472,25 @@ const Dashboard: React.FC = () => {
       const mainMockupPrompt = `MASTER PRESTIGE MOCKUP: Complete stationery set for ${companyName} with envelopes and letterheads.`;
 
       // BATCHED SEQUENTIAL GENERATION (to avoid hitting quota limits simultaneously)
+      // Increased delays for free tier users to ensure they can complete at least 2 generations
       const faviconUrl = await smartGenerateImage(variationsPrompts[4], logoUrl);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 5000));
       
       setLoadingStep("Génération du système d'identité monochrome...");
       const monochromeUrl = await smartGenerateImage(variationsPrompts[1], logoUrl);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 5000));
       
       setLoadingStep("Création du motif de marque exclusif...");
       const patternUrl = await smartGenerateImage(patternPrompt, logoUrl);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 5000));
       
       setLoadingStep("Mise en situation de la marque (Mockup Maître)...");
       const mainMockupUrl = await smartGenerateImage(mainMockupPrompt, logoUrl);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 5000));
       
       setLoadingStep("Conception des supports imprimés (Cartes & Flyers)...");
       const businessCardUrl = await smartGenerateImage(businessCardPrompt, logoUrl);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 5000));
       
       const flyerUrl = await smartGenerateImage(flyerPrompt, logoUrl);
       
@@ -720,6 +729,23 @@ const Dashboard: React.FC = () => {
                 <LogoBrandingForm onSubmit={handleLogoSubmit} isLoading={isLoading} />
               )}
 
+              {quotaWarning && !isLoading && !error && (
+                <div className="mt-8 p-6 glass-dark border border-amber-500/30 rounded-3xl flex items-center justify-between animate-pulse">
+                  <div className="flex items-center">
+                    <div className="w-10 h-10 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mr-4">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                    </div>
+                    <p className="text-amber-200/80 text-sm font-medium">Attention : Il ne vous reste qu'une seule génération gratuite sur votre plan Starter.</p>
+                  </div>
+                  <button 
+                    onClick={() => navigate('/')}
+                    className="text-amber-500 text-[10px] font-black uppercase tracking-widest hover:underline"
+                  >
+                    Passer au Pro
+                  </button>
+                </div>
+              )}
+
               {isLoading && (
                 <div className="mt-20 flex flex-col items-center glass-dark rounded-[4rem] p-20 border-2 border-white/20 shadow-3xl text-center">
                   <div className="w-32 h-32 mb-12 relative">
@@ -747,22 +773,42 @@ const Dashboard: React.FC = () => {
                   <p className="text-slate-900 text-lg font-bold mb-8 max-w-md mx-auto">{error.message}</p>
                   
                   <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                    {error.message.includes("supprimer d'anciens projets") ? (
+                      <button 
+                        onClick={() => {
+                          setError(null);
+                          setActiveTab('projects');
+                        }}
+                        className="px-10 py-4 bg-indigo-600 text-white font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-indigo-700 transition-all shadow-xl"
+                      >
+                        Gérer mes projets
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => setError(null)}
+                        className="px-10 py-4 bg-indigo-600 text-white font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-indigo-700 transition-all shadow-xl"
+                      >
+                        Réessayer
+                      </button>
+                    )}
+                    
                     {!hasApiKey && (
                       <button 
                         onClick={handleOpenKeyDialog}
-                        className="px-10 py-4 bg-indigo-600 text-white font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-indigo-700 transition-all shadow-lg"
+                        className="px-10 py-4 bg-emerald-600 text-white font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-emerald-700 transition-all shadow-lg"
                       >
                         Sélectionner une Clé API
                       </button>
                     )}
-                    <a 
-                      href="https://ai.google.dev/gemini-api/docs/rate-limits" 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="px-10 py-4 bg-slate-100 text-slate-600 font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-slate-200 transition-all"
-                    >
-                      Gérer la Facturation
-                    </a>
+
+                    {error.type === 'quota' && !error.message.includes("supprimer d'anciens projets") && (
+                      <button 
+                        onClick={() => navigate('/')}
+                        className="px-10 py-4 bg-slate-100 text-slate-900 font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-slate-200 transition-all border border-slate-200"
+                      >
+                        Passer au Plan Pro
+                      </button>
+                    )}
                   </div>
                 </div>
               )}

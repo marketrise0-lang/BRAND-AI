@@ -420,6 +420,25 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
 
     try {
       const element = contentRef.current;
+      
+      // Helper to convert any color to RGB using canvas
+      const colorToRgb = (color: string): string => {
+        if (!color || typeof color !== 'string' || (!color.includes('oklch') && !color.includes('oklab') && !color.includes('var'))) return color;
+        try {
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = 1;
+          tempCanvas.height = 1;
+          const ctx = tempCanvas.getContext('2d');
+          if (!ctx) return color;
+          ctx.fillStyle = color;
+          ctx.fillRect(0, 0, 1, 1);
+          const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+          return `rgba(${r}, ${g}, ${b}, ${a / 255})`;
+        } catch (e) {
+          return color;
+        }
+      };
+
       const opt = {
         margin: 0,
         filename: `${companyName.replace(/\s+/g, '_')}_BRAND_GUIDELINES.pdf`,
@@ -428,7 +447,37 @@ const BrandingResult: React.FC<BrandingResultProps> = ({ data, onUpdateMockups, 
           scale: 2, 
           useCORS: true, 
           letterRendering: true,
-          logging: false
+          logging: false,
+          onclone: (clonedDoc: Document) => {
+            // Process the cloned document to replace oklch/oklab colors with RGB
+            // html2canvas fails on oklch/oklab, so we must convert them
+            const allElements = clonedDoc.getElementsByTagName('*');
+            for (let i = 0; i < allElements.length; i++) {
+              const el = allElements[i] as HTMLElement;
+              const style = window.getComputedStyle(el);
+              
+              // List of properties that might use oklch/oklab colors in Tailwind v4
+              const props = [
+                'color', 'backgroundColor', 'borderColor', 
+                'borderTopColor', 'borderBottomColor', 'borderLeftColor', 'borderRightColor',
+                'fill', 'stroke', 'outlineColor', 'boxShadow', 'textShadow'
+              ];
+              
+              props.forEach(prop => {
+                const val = (style as any)[prop];
+                if (val && (val.includes('oklch') || val.includes('oklab') || val.includes('var'))) {
+                  try {
+                    const rgb = colorToRgb(val);
+                    if (rgb !== val) {
+                      el.style[prop as any] = rgb;
+                    }
+                  } catch (e) {
+                    // Ignore errors for complex properties like boxShadow
+                  }
+                }
+              });
+            }
+          }
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }

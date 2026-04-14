@@ -40,12 +40,12 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, backoff = 2000): 
       errorStr.includes("RESOURCE_EXHAUSTED");
     
     if (isQuotaError && retries > 0) {
-      // Use a much longer backoff for quota errors (starting at 5s)
-      const quotaBackoff = Math.max(backoff, 5000) * 1.5; 
+      // Use a much longer backoff for quota errors (starting at 10s for free tier safety)
+      const quotaBackoff = Math.max(backoff, 10000) * 1.5; 
       console.warn(`Quota exceeded (429), retrying in ${Math.round(quotaBackoff)}ms... (${retries} attempts left)`);
       await new Promise(resolve => setTimeout(resolve, quotaBackoff));
       // Exponential backoff with jitter
-      const nextBackoff = quotaBackoff * 2 + Math.floor(Math.random() * 3000);
+      const nextBackoff = quotaBackoff * 1.5 + Math.floor(Math.random() * 5000);
       return withRetry(fn, retries - 1, nextBackoff);
     }
     throw error;
@@ -260,6 +260,9 @@ function safeParseJSON(text: string): any {
     }
 
     if (inString) {
+      if (result.endsWith('\\')) {
+        result = result.slice(0, -1);
+      }
       result += '"';
     }
 
@@ -329,6 +332,9 @@ function safeParseJSON(text: string): any {
     }
     
     if (inString) {
+      if (result.endsWith('\\')) {
+        result = result.slice(0, -1);
+      }
       result += '"';
     }
     
@@ -336,9 +342,10 @@ function safeParseJSON(text: string): any {
   };
 
   try {
+    console.log(`Attempting to parse JSON of length: ${cleanText.length}`);
     return JSON.parse(cleanText);
   } catch (e: any) {
-    console.error("Initial JSON Parse Error:", e.message);
+    console.error("Initial JSON Parse Error:", e.message, "at position:", e.at || "unknown");
     
     // Attempt 1: Extract JSON from surrounding text
     let processed = extractJSON(cleanText);
@@ -431,7 +438,7 @@ export const generateBranding = async (profile: BrandProfile, usePro: boolean = 
     if (!parsed.analysis.futureRecommendations) parsed.analysis.futureRecommendations = [];
     
     return parsed;
-  });
+  }, 5);
 };
 
 export const generateBrandingFromLogo = async (logoBase64: string, companyName: string, usePro: boolean = false): Promise<BrandingResult> => {
@@ -483,7 +490,7 @@ export const generateBrandingFromLogo = async (logoBase64: string, companyName: 
     if (!parsed.analysis.futureRecommendations) parsed.analysis.futureRecommendations = [];
 
     return parsed;
-  });
+  }, 5);
 };
 
 export const generateMockup = async (prompt: string, base64Logo?: string, aspectRatio: any = "1:1"): Promise<string | null> => {
@@ -640,7 +647,7 @@ export const generateImage = async (prompt: string, base64ReferenceImage?: strin
         }
         throw innerErr;
       }
-    }, 2); // Only 2 retries for images to speed up skipping
+    }, 5); // Increased retries for images
   } catch (err: any) {
     console.error("Image generation error:", err);
     if (err.message?.includes("SAFETY") || err.message?.includes("safety")) {
